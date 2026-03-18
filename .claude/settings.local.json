@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm --version)",
+      "WebSearch",
+      "Bash(pip install:*)",
+      "Bash(python -c \"from app.services.template_generator import TemplateGenerator; print\\(''template_generator OK''\\)\")",
+      "Bash(python -c \"from app.services.cdp_injector import CDPInjector; print\\(''cdp_injector OK''\\)\")"
+    ]
+  }
+}
