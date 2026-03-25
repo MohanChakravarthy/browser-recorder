@@ -37,3 +37,14 @@
   },
   "previous_step_summary": "Filled password field"
 }
+
+
+{
+  "failed_step": 3,
+  "failed_line": "Click    [data-testid='login-submit']",
+  "error_message": "Element not found within 10s",
+  "failure_type": "element_not_found",
+  "current_page_url": "https://app.example.com/login",
+  "failure_screenshot": "base64_current_page",
+  "current_dom_snapshot": "accessibility tree or page HTML"
+}
