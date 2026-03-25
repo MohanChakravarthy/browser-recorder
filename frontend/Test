@@ -1,0 +1,39 @@
+{
+  "step": 3,
+  "action": "click",
+  "coordinates": {"x": 240, "y": 380},
+  "input_value": null,
+  "page_url": "https://app.example.com/login",
+  "page_title": "Login - MyApp",
+  "element": {
+    "tag": "button",
+    "type": "submit",
+    "inner_text": "Sign In",
+    "outer_html": "<button id='login-btn' class='btn btn-primary' data-testid='login-submit'>Sign In</button>"
+  },
+  "family": {
+    "parent": {"tag": "form", "id": "login-form", "class": "auth-form"},
+    "grandparent": {"tag": "div", "id": "auth-container"},
+    "siblings": ["input#username", "input#password", "a.forgot-link"],
+    "nearby_label": null,
+    "form_ancestor": {"id": "login-form", "action": "/api/login"}
+  },
+  "locators": {
+    "by_id": {"selector": "#login-btn", "matches": 1, "unique": true},
+    "by_testid": {"selector": "[data-testid='login-submit']", "matches": 1, "unique": true},
+    "by_css_class": {"selector": "button.btn-primary", "matches": 3, "unique": false},
+    "by_aria_label": null,
+    "by_name": null,
+    "by_text": {"selector": "text=Sign In", "matches": 2, "unique": false},
+    "by_role": {"selector": "role=button[name='Sign In']", "matches": 2, "unique": false},
+    "by_xpath": {"selector": "//button[@id='login-btn']", "matches": 1, "unique": true},
+    "by_parent_child": {"selector": "form#login-form >> button[type='submit']", "matches": 1, "unique": true},
+    "by_nth": {"selector": "form#login-form >> button >> nth=0", "matches": 1, "unique": true},
+    "by_coordinates": {"selector": "240,380", "matches": 1, "unique": true}
+  },
+  "screenshots": {
+    "element_crop": "base64_cropped_200x200_around_element",
+    "full_page_after": "base64_full_page"
+  },
+  "previous_step_summary": "Filled password field"
+}
