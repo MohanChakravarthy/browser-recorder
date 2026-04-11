@@ -1,3 +1,588 @@
+_____&&&_______
+
+"""
+NLP Test Generator — Standalone FastAPI Server
+Run: python app.py
+"""
+
+import asyncio
+import base64
+import concurrent.futures
+import glob
+import json
+import os
+import re
+import subprocess
+import tempfile
+import traceback
+import uuid
+from datetime import datetime
+from pathlib import Path
+from typing import Optional
+
+from dotenv import load_dotenv
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, HTMLResponse
+
+from ai_service import AIService
+from playwright_parser import assemble_robot_file, playwright_to_rf
+
+load_dotenv()
+
+app = FastAPI(title="NLP Test Generator", version="1.0.0")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+PLAYWRIGHT_CLI = os.getenv("PLAYWRIGHT_CLI_PATH", "playwright-cli")
+WORKSPACE_DIR = Path(os.getenv("NLP_WORKSPACE", os.path.join(tempfile.gettempdir(), "nlp-test-workspaces")))
+GENERATED_TESTS_DIR = Path("./generated_tests")
+WORKSPACE_DIR.mkdir(parents=True, exist_ok=True)
+GENERATED_TESTS_DIR.mkdir(parents=True, exist_ok=True)
+
+ai_service = AIService()
+_executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
+
+# Speed: actions that skip screenshot (non-visual changes)
+SKIP_SCREENSHOT_ACTIONS = {"fill", "check", "uncheck", "hover", "press_key", "wait"}
+
+# Speed: actions that trigger page changes (need extra wait)
+PAGE_CHANGE_WORDS = ["submit", "save", "create", "delete", "send", "login", "sign", "confirm", "add", "remove", "update", "navigate", "go to"]
+
+
+# ─── Credential Manager ──────────────────────────────────────────
+
+class CredentialManager:
+    """
+    Ensures credentials NEVER reach the AI.
+    - Replaces real values with ${VAR} before sending to AI
+    - Injects real values only at playwright-cli execution
+    - RF script uses ${VAR} references
+    """
+
+    def __init__(self, username: str = "", password: str = "", start_url: str = ""):
+        self.mappings = {}
+        if username:
+            self.mappings["${USERNAME}"] = username
+        if password:
+            self.mappings["${PASSWORD}"] = password
+        if start_url:
+            self.mappings["${BASE_URL}"] = start_url
+
+    def mask(self, text: str) -> str:
+        """Replace real values with placeholders (for AI)."""
+        result = text
+        for var, real in self.mappings.items():
+            if real and real in result:
+                result = result.replace(real, var)
+        return result
+
+    def unmask(self, text: str) -> str:
+        """Replace placeholders with real values (for playwright-cli)."""
+        result = text
+        for var, real in self.mappings.items():
+            if var in result:
+                result = result.replace(var, real)
+        return result
+
+    def mask_step(self, step: dict) -> dict:
+        """Return a copy of step with values masked."""
+        masked = dict(step)
+        if "value" in masked and masked["value"]:
+            masked["value"] = self.mask(str(masked["value"]))
+        if "target" in masked and masked["target"]:
+            masked["target"] = self.mask(str(masked["target"]))
+        if "expected" in masked and masked["expected"]:
+            masked["expected"] = self.mask(str(masked["expected"]))
+        return masked
+
+    def get_rf_variables(self) -> dict:
+        """Return variable dict for RF file header (values masked)."""
+        variables = {}
+        if "${USERNAME}" in self.mappings:
+            variables["USERNAME"] = "SET_AT_RUNTIME"
+        if "${PASSWORD}" in self.mappings:
+            variables["PASSWORD"] = "SET_AT_RUNTIME"
+        return variables
+
+
+# ─── Subprocess Helper ────────────────────────────────────────────
+
+async def run_cli(command: str, session: str = "default", cwd: str = "", timeout: float = 30.0) -> dict:
+    """Execute playwright-cli command (Windows compatible via thread pool)."""
+    full_cmd = f"{PLAYWRIGHT_CLI} -s={session} {command}"
+    work_dir = cwd or str(WORKSPACE_DIR)
+
+    print(f"  [CLI] {full_cmd}")
+
+    def _run():
+        try:
+            result = subprocess.run(
+                full_cmd, shell=True, capture_output=True,
+                cwd=work_dir, timeout=timeout,
+                encoding="utf-8", errors="replace",
+            )
+            return result.stdout, result.stderr, result.returncode
+        except subprocess.TimeoutExpired:
+            return "", "Command timed out", -1
+        except Exception as e:
+            return "", str(e), -1
+
+    loop = asyncio.get_event_loop()
+    stdout_str, stderr_str, returncode = await loop.run_in_executor(_executor, _run)
+
+    print(f"  [CLI stdout] {stdout_str[:500]}")
+    if stderr_str.strip():
+        print(f"  [CLI stderr] {stderr_str[:200]}")
+    print(f"  [CLI return] {returncode}")
+
+    snapshot_file = None
+    for line in stdout_str.split("\n"):
+        match = re.search(r"(\.playwright-cli[/\\][^\s\)\]]+\.yml)", line)
+        if match:
+            snapshot_file = os.path.join(work_dir, match.group(1))
+
+    screenshot_file = None
+    for line in stdout_str.split("\n"):
+        match = re.search(r"(\.playwright-cli[/\\][^\s\)\]]+\.png)", line)
+        if match:
+            screenshot_file = os.path.join(work_dir, match.group(1))
+
+    return {
+        "stdout": stdout_str,
+        "stderr": stderr_str,
+        "returncode": returncode,
+        "snapshot_file": snapshot_file,
+        "screenshot_file": screenshot_file,
+    }
+
+
+def read_file_content(path: str) -> str:
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            return f.read()
+    except (FileNotFoundError, IOError):
+        return ""
+
+
+def find_latest_file(directory: str, pattern: str) -> Optional[str]:
+    files = sorted(glob.glob(os.path.join(directory, pattern)), key=os.path.getmtime, reverse=True)
+    return files[0] if files else None
+
+
+def file_to_base64(path: str) -> Optional[str]:
+    try:
+        with open(path, "rb") as f:
+            return base64.b64encode(f.read()).decode("utf-8")
+    except (FileNotFoundError, IOError):
+        return None
+
+
+def extract_playwright_code(stdout: str) -> Optional[str]:
+    for line in stdout.strip().split("\n"):
+        line = line.strip()
+        if line.startswith("await page.") or line.startswith("page."):
+            return line
+    return None
+
+
+# ─── Orchestrator ─────────────────────────────────────────────────
+
+class Orchestrator:
+    def __init__(self, session_id: str, ws: WebSocket, creds: CredentialManager):
+        self.session_id = session_id
+        self.ws = ws
+        self.creds = creds
+        self.workspace = str(WORKSPACE_DIR / session_id)
+        self.cli_dir = os.path.join(self.workspace, ".playwright-cli")
+        self.paused = False
+        self.stopped = False
+        self.rf_lines: list[str] = []
+        self.steps: list[dict] = []
+        self.last_snapshot_content: str = ""  # Speed: reuse snapshots
+        self.last_screenshot_b64: Optional[str] = None  # Speed: reuse screenshots
+
+        os.makedirs(self.workspace, exist_ok=True)
+
+    async def send(self, msg: dict):
+        try:
+            await self.ws.send_json(msg)
+        except Exception:
+            pass
+
+    async def wait_if_paused(self):
+        while self.paused and not self.stopped:
+            await asyncio.sleep(0.3)
+
+    async def screenshot(self) -> Optional[str]:
+        result = await run_cli("screenshot", self.session_id, self.workspace)
+        path = result.get("screenshot_file") or find_latest_file(self.cli_dir, "*.png")
+        b64 = file_to_base64(path) if path else None
+        if b64:
+            self.last_screenshot_b64 = b64
+        return b64
+
+    async def snapshot(self, force: bool = False) -> str:
+        """Take snapshot. If not forced and we have a recent one, reuse it."""
+        if not force and self.last_snapshot_content:
+            return self.last_snapshot_content
+
+        result = await run_cli("snapshot", self.session_id, self.workspace)
+        path = result.get("snapshot_file") or find_latest_file(self.cli_dir, "*.yml")
+        content = read_file_content(path) if path else ""
+        if content:
+            self.last_snapshot_content = content
+        return content
+
+    def invalidate_snapshot(self):
+        """Mark snapshot as stale after an action changes the page."""
+        self.last_snapshot_content = ""
+
+    async def execute_step(self, step: dict, index: int) -> dict:
+        action = step.get("action", "")
+        description = step.get("description", "")
+
+        await self.send({
+            "type": "step_start",
+            "index": index,
+            "description": description,
+            "action": action,
+        })
+
+        try:
+            # ── Navigate ──────────────────────────────
+            if action == "navigate":
+                target = step.get("target", "")
+                real_target = self.creds.unmask(target)
+                await run_cli(f"goto {real_target}", self.session_id, self.workspace)
+                await asyncio.sleep(1.0)
+                self.invalidate_snapshot()
+                pw_code = f"page.goto('{target}')"
+                rf_line = f"    Go To    {target}"
+
+            # ── Wait ──────────────────────────────────
+            elif action == "wait":
+                duration = step.get("value", "2")
+                await asyncio.sleep(float(duration))
+                self.invalidate_snapshot()
+                rf_line = f"    Sleep    {duration}s"
+                pw_code = f"page.waitForTimeout({int(float(duration) * 1000)})"
+
+            # ── Assertions ────────────────────────────
+            elif action.startswith("assert"):
+                snapshot_content = await self.snapshot(force=True)
+                # Mask snapshot before sending to AI
+                masked_snapshot = self.creds.mask(snapshot_content)
+                masked_step = self.creds.mask_step(step)
+                assertion = await ai_service.generate_assertion(masked_snapshot, masked_step)
+                rf_line = assertion.get("full_line", f"    # Assertion: {description}")
+                pw_code = f"// Assertion: {description}"
+
+            # ── Interactive actions ───────────────────
+            else:
+                # Get snapshot (reuses cached if available)
+                snapshot_content = await self.snapshot()
+
+                # Mask before sending to AI
+                masked_snapshot = self.creds.mask(snapshot_content)
+                masked_step = self.creds.mask_step(step)
+
+                element_info = await ai_service.pick_element(masked_snapshot, masked_step)
+                ref = element_info.get("ref")
+
+                if not ref:
+                    # Retry with fresh snapshot
+                    snapshot_content = await self.snapshot(force=True)
+                    masked_snapshot = self.creds.mask(snapshot_content)
+                    element_info = await ai_service.pick_element(masked_snapshot, masked_step)
+                    ref = element_info.get("ref")
+
+                if not ref:
+                    raise Exception(
+                        f"Could not find element for: {description}. "
+                        f"AI reasoning: {element_info.get('reasoning', 'unknown')}"
+                    )
+
+                # Build CLI command — inject REAL credentials here
+                if action == "fill":
+                    value = step.get("value", "")
+                    real_value = self.creds.unmask(value)
+                    cli_cmd = f'fill {ref} "{real_value}"'
+                elif action == "select":
+                    value = step.get("value", "")
+                    real_value = self.creds.unmask(value)
+                    cli_cmd = f'select {ref} "{real_value}"'
+                elif action == "check":
+                    cli_cmd = f"check {ref}"
+                elif action == "uncheck":
+                    cli_cmd = f"uncheck {ref}"
+                elif action == "hover":
+                    cli_cmd = f"hover {ref}"
+                elif action == "press_key":
+                    key = step.get("value", "Enter")
+                    cli_cmd = f"press {key}"
+                else:
+                    cli_cmd = f"click {ref}"
+
+                result = await run_cli(cli_cmd, self.session_id, self.workspace)
+                self.invalidate_snapshot()
+
+                if result["returncode"] not in (0, None):
+                    error_msg = result["stderr"] or result["stdout"]
+                    if error_msg.strip():
+                        raise Exception(f"playwright-cli error: {error_msg.strip()[:200]}")
+
+                # Speed: shorter wait, only for page-changing actions
+                if action == "click" and any(w in description.lower() for w in PAGE_CHANGE_WORDS):
+                    await asyncio.sleep(1.0)
+
+                # Extract playwright_code
+                pw_code = extract_playwright_code(result["stdout"]) or f"// {cli_cmd}"
+
+                # Mask any leaked credentials in playwright_code
+                pw_code = self.creds.mask(pw_code)
+
+                # Convert to RF
+                clean_code = pw_code
+                if clean_code.startswith("await "):
+                    clean_code = clean_code[6:]
+                if clean_code.startswith("//"):
+                    rf_line = f"    # Action: {self.creds.mask(cli_cmd)}"
+                else:
+                    rf_line = playwright_to_rf(clean_code)
+
+                # Mask any credentials that leaked into RF line
+                rf_line = self.creds.mask(rf_line)
+
+            # Speed: only screenshot for visual actions
+            if action in SKIP_SCREENSHOT_ACTIONS:
+                screenshot_b64 = self.last_screenshot_b64
+            else:
+                screenshot_b64 = await self.screenshot()
+
+            self.rf_lines.append(rf_line)
+
+            return {
+                "status": "success",
+                "rf_line": rf_line,
+                "playwright_code": self.creds.mask(pw_code),
+                "screenshot_b64": screenshot_b64,
+                "error": None,
+            }
+
+        except Exception as e:
+            screenshot_b64 = await self.screenshot()
+            error_msg = self.creds.mask(str(e))  # mask errors too
+            self.rf_lines.append(f"    # FAILED: {description} — {error_msg[:100]}")
+
+            return {
+                "status": "failed",
+                "rf_line": f"    # FAILED: {description}",
+                "playwright_code": "",
+                "screenshot_b64": screenshot_b64,
+                "error": error_msg,
+            }
+
+    async def run(self, nlp_input: str, start_url: str):
+        try:
+            # ── 1. Break NLP into steps ───────────────
+            await self.send({"type": "status", "message": f"Analyzing with {ai_service.provider_display}..."})
+
+            # Mask NLP input before sending to AI
+            masked_nlp = self.creds.mask(nlp_input)
+            masked_url = self.creds.mask(start_url)
+            self.steps = await ai_service.break_into_steps(masked_nlp, masked_url)
+
+            await self.send({
+                "type": "steps_planned",
+                "steps": self.steps,
+                "total": len(self.steps),
+            })
+
+            print(f"\n[Orchestrator] {len(self.steps)} steps planned:")
+            for s in self.steps:
+                print(f"  {s['step']}. [{s['action']}] {s['description']}")
+
+            # ── 2. Open browser ───────────────────────
+            await self.send({"type": "status", "message": "Opening browser..."})
+
+            result = await run_cli(f"open {start_url}", self.session_id, self.workspace)
+
+            if result["returncode"] not in (0, None):
+                stderr = result["stderr"].strip()
+                if stderr:
+                    await self.send({"type": "error", "message": f"Failed to open browser: {stderr[:300]}"})
+                    return
+
+            await asyncio.sleep(1.5)
+
+            screenshot_b64 = await self.screenshot()
+            if screenshot_b64:
+                await self.send({
+                    "type": "step_complete",
+                    "index": -1,
+                    "status": "success",
+                    "screenshot_b64": screenshot_b64,
+                    "rf_line": "    New Page    ${BASE_URL}",
+                    "playwright_code": f"page.goto('{masked_url}')",
+                })
+
+            # ── 3. Execute each step ──────────────────
+            passed = 0
+            failed = 0
+
+            for i, step in enumerate(self.steps):
+                if self.stopped:
+                    await self.send({"type": "status", "message": "Stopped by user."})
+                    break
+
+                await self.wait_if_paused()
+
+                # Skip initial navigate
+                if i == 0 and step.get("action") == "navigate":
+                    target = step.get("target", "")
+                    if target in (start_url, masked_url, "${BASE_URL}", "/", ""):
+                        self.rf_lines.append("    # Initial navigation — handled by New Page")
+                        await self.send({
+                            "type": "step_complete", "index": i, "status": "skipped",
+                            "screenshot_b64": screenshot_b64,
+                            "rf_line": "    # Initial navigation — handled by New Page",
+                            "playwright_code": "",
+                        })
+                        passed += 1
+                        continue
+
+                print(f"\n[Step {i + 1}/{len(self.steps)}] {step['action']}: {step['description']}")
+
+                step_result = await self.execute_step(step, i)
+
+                if step_result["status"] == "success":
+                    passed += 1
+                    await self.send({
+                        "type": "step_complete", "index": i, "status": "success",
+                        "screenshot_b64": step_result["screenshot_b64"],
+                        "rf_line": step_result["rf_line"],
+                        "playwright_code": step_result["playwright_code"],
+                    })
+                    print(f"  ✓ RF: {step_result['rf_line'].strip()}")
+                else:
+                    failed += 1
+                    await self.send({
+                        "type": "step_failed", "index": i,
+                        "error": step_result["error"],
+                        "screenshot_b64": step_result["screenshot_b64"],
+                    })
+                    print(f"  ✗ Error: {step_result['error']}")
+
+                # Speed: reduced inter-step delay
+                await asyncio.sleep(0.3)
+
+            # ── 4. Assemble .robot file ───────────────
+            test_name = re.sub(r"[^\w\s]", "", nlp_input)[:60].strip().title()
+            robot_script = assemble_robot_file(
+                test_name=test_name,
+                test_description=self.creds.mask(nlp_input),
+                base_url="${BASE_URL}",
+                rf_lines=self.rf_lines,
+                variables=self.creds.get_rf_variables(),
+            )
+
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"test_{timestamp}.robot"
+            filepath = GENERATED_TESTS_DIR / filename
+            with open(filepath, "w", encoding="utf-8") as f:
+                f.write(robot_script)
+
+            await self.send({
+                "type": "rf_script_complete",
+                "script": robot_script,
+                "filename": filename,
+            })
+
+            await self.send({
+                "type": "execution_complete",
+                "total_steps": len(self.steps),
+                "passed": passed,
+                "failed": failed,
+            })
+
+            print(f"\n[Done] {passed} passed, {failed} failed → {filename}")
+            await run_cli("close", self.session_id, self.workspace)
+
+        except Exception as e:
+            error_detail = traceback.format_exc()
+            print(f"\n[Error]\n{error_detail}")
+            await run_cli("close", session_id, str(WORKSPACE_DIR / session_id))
+    except Exception as e:
+        print(f"[WS Error] {traceback.format_exc()}")
+
+
+# ─── REST Endpoints ───────────────────────────────────────────────
+
+@app.get("/api/generated-tests")
+async def list_tests():
+    files = sorted(GENERATED_TESTS_DIR.glob("*.robot"), key=os.path.getmtime, reverse=True)
+    return [
+        {"filename": f.name, "created": datetime.fromtimestamp(f.stat().st_mtime).isoformat(), "size_bytes": f.stat().st_size}
+        for f in files
+    ]
+
+@app.get("/api/generated-tests/{filename}")
+async def download_test(filename: str):
+    filepath = GENERATED_TESTS_DIR / filename
+    if not filepath.exists():
+        return {"error": "File not found"}
+    return FileResponse(filepath, filename=filename, media_type="text/plain")
+
+@app.get("/api/health")
+async def health():
+    cli_ok = False
+    cli_version = "not found"
+    try:
+        result = subprocess.run(
+            f"{PLAYWRIGHT_CLI} --version", shell=True,
+            capture_output=True, encoding="utf-8", timeout=10,
+        )
+        cli_ok = result.returncode == 0
+        cli_version = result.stdout.strip() if cli_ok else "not found"
+    except Exception:
+        pass
+    return {
+        "status": "ok" if cli_ok else "degraded",
+        "playwright_cli": {"installed": cli_ok, "version": cli_version},
+        "ai_provider": ai_service.provider_display,
+    }
+
+@app.get("/")
+async def serve_ui():
+    html_path = Path(__file__).parent / "index.html"
+    if html_path.exists():
+        return HTMLResponse(html_path.read_text(encoding="utf-8"))
+    return HTMLResponse("<h2>Place index.html in the same directory as app.py</h2>")
+
+if __name__ == "__main__":
+    import uvicorn
+    host = os.getenv("HOST", "0.0.0.0")
+    port = int(os.getenv("PORT", "8000"))
+    print(f"\n{'='*50}")
+    print(f"  NLP Test Generator")
+    print(f"  AI Provider: {ai_service.provider_display}")
+    print(f"  Server: http://{host}:{port}")
+    print(f"{'='*50}\n")
+    uvicorn.run("app:app", host=host, port=port, reload=True)
+
+
+_____&&&_______
+
+
+
+
+
 """
 AI Service — Supports Azure OpenAI and Google Gemini
 Provider is selected via AI_PROVIDER env variable.
