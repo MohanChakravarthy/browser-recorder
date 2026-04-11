@@ -1848,3 +1848,66 @@ class AIService:
                 "full_line": f'    Log    Assertion could not be generated for: {step.get("description", "unknown")}',
             }
             
+
+
+
+_______import subprocess
+import concurrent.futures
+
+_executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
+
+async def run_cli(
+    command: str,
+    session: str = "default",
+    cwd: str = "",
+    timeout: float = 30.0,
+) -> dict:
+    """Execute playwright-cli command using thread pool (Windows compatible)."""
+    full_cmd = f"{PLAYWRIGHT_CLI} -s={session} {command}"
+    work_dir = cwd or str(WORKSPACE_DIR)
+
+    print(f"  [CLI] {full_cmd}")
+
+    def _run():
+        try:
+            result = subprocess.run(
+                full_cmd,
+                shell=True,
+                capture_output=True,
+                cwd=work_dir,
+                timeout=timeout,
+                encoding="utf-8",
+                errors="replace",
+            )
+            return result.stdout, result.stderr, result.returncode
+        except subprocess.TimeoutExpired:
+            return "", "Command timed out", -1
+
+    loop = asyncio.get_event_loop()
+    stdout_str, stderr_str, returncode = await loop.run_in_executor(_executor, _run)
+
+    print(f"  [CLI stdout] {stdout_str[:500]}")
+    print(f"  [CLI stderr] {stderr_str[:200]}")
+    print(f"  [CLI return] {returncode}")
+
+    # Extract snapshot file path
+    snapshot_file = None
+    for line in stdout_str.split("\n"):
+        match = re.search(r"(\.playwright-cli[/\\][^\s\]]+\.yml)", line)
+        if match:
+            snapshot_file = os.path.join(work_dir, match.group(1))
+
+    # Extract screenshot file path
+    screenshot_file = None
+    for line in stdout_str.split("\n"):
+        match = re.search(r"(\.playwright-cli[/\\][^\s\]]+\.png)", line)
+        if match:
+            screenshot_file = os.path.join(work_dir, match.group(1))
+
+    return {
+        "stdout": stdout_str,
+        "stderr": stderr_str,
+        "returncode": returncode,
+        "snapshot_file": snapshot_file,
+        "screenshot_file": screenshot_file,
+    }
