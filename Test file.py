@@ -1,3 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NLP Test Generator</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body, #root { height: 100%; width: 100%; overflow: hidden; }
+        body { background: #0a0e1a; color: #e2e8f0; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.5 } }
+        @keyframes fadeIn { from { opacity:0; transform:translateY(4px) } to { opacity:1; transform:translateY(0) } }
+        @keyframes glow { 0%,100% { box-shadow: 0 0 4px #3b82f620 } 50% { box-shadow: 0 0 12px #3b82f640 } }
+        ::-webkit-scrollbar { width:5px }
+        ::-webkit-scrollbar-track { background:#0a0e1a }
+        ::-webkit-scrollbar-thumb { background:#1e293b; border-radius:3px }
+        ::-webkit-scrollbar-thumb:hover { background:#334155 }
+        input:focus, textarea:focus { border-color:#3b82f6 !important; outline:none }
+        button:hover { filter:brightness(1.1) }
+        button:active { transform:scale(0.98) }
+    </style>
+    <!-- Monaco Editor Loader -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs/loader.min.js"></script>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useRef, useEffect, useCallback } = React;
+
+        const WS_BASE = `ws://${window.location.hostname}:${window.location.port || '8000'}`;
+        const ICONS = { pending:"○", running:"◉", success:"✓", failed:"✗", skipped:"⊘" };
+        const COLORS = { pending:"#4b5563", running:"#f59e0b", success:"#22c55e", failed:"#ef4444", skipped:"#6b7280" };
+
+        // ─── Monaco Editor Component ─────────────────────
+        function MonacoEditor({ value, language = "robot" }) {
+            const containerRef = useRef(null);
+            const editorRef = useRef(null);
+            const monacoReadyRef = useRef(false);
+
+            useEffect(() => {
+                if (!containerRef.current) return;
+
+                require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs' }});
+
+                require(['vs/editor/editor.main'], function(monaco) {
+                    // Register Robot Framework language
+                    if (!monacoReadyRef.current) {
+                        monaco.languages.register({ id: 'robot' });
+                        monaco.languages.setMonarchTokensProvider('robot', {
+                            tokenizer: {
+                                root: [
+                                    [/^\*\*\*.*\*\*\*/, 'keyword.section'],
+                                    [/\$\{[^}]+\}/, 'variable'],
+                                    [/\[Documentation\]|\[Setup\]|\[Teardown\]|\[Tags\]|\[Template\]/, 'keyword.tag'],
+                                    [/#.*$/, 'comment'],
+                                    [/Library|Resource|Variables|Suite Setup|Suite Teardown|Test Setup|Test Teardown/, 'keyword.setting'],
+                                    [/New Browser|New Page|Close Browser|Click|Fill Text|Get Text|Get Url|Get Element States|Get Element Count|Get Title|Wait For Elements State|Check Checkbox|Uncheck Checkbox|Select Options By|Hover|Keyboard Key|Type Text|Upload File By Selector|Go To|Go Back|Go Forward|Reload|Sleep|Wait For Load State|Log|Take Screenshot/, 'support.function'],
+                                    [/==|!=|\*=|contains|visible|enabled|disabled|checked|hidden/, 'operator'],
+                                    [/headless=true|headless=false|chromium|firefox|webkit/, 'constant'],
+                                    [/"[^"]*"/, 'string'],
+                                    [/'[^']*'/, 'string'],
+                                    [/\b(true|false|True|False|None)\b/, 'constant'],
+                                    [/# FAILED:.*$/, 'invalid'],
+                                    [/# WARNING:.*$/, 'keyword.warning'],
+                                    [/# MANUAL REVIEW:.*$/, 'keyword.warning'],
+                                ],
+                            },
+                        });
+
+                        monaco.editor.defineTheme('nlp-dark', {
+                            base: 'vs-dark',
+                            inherit: true,
+                            rules: [
+                                { token: 'keyword.section', foreground: '60a5fa', fontStyle: 'bold' },
+                                { token: 'variable', foreground: 'c084fc' },
+                                { token: 'keyword.tag', foreground: 'f472b6' },
+                                { token: 'keyword.setting', foreground: '60a5fa' },
+                                { token: 'support.function', foreground: '34d399' },
+                                { token: 'comment', foreground: '4b5563', fontStyle: 'italic' },
+                                { token: 'string', foreground: 'fbbf24' },
+                                { token: 'operator', foreground: 'fb923c' },
+                                { token: 'constant', foreground: 'f472b6' },
+                                { token: 'invalid', foreground: 'fca5a5', fontStyle: 'italic' },
+                                { token: 'keyword.warning', foreground: 'fbbf24', fontStyle: 'italic' },
+                            ],
+                            colors: {
+                                'editor.background': '#080c16',
+                                'editor.foreground': '#e2e8f0',
+                                'editor.lineHighlightBackground': '#1e293b40',
+                                'editorLineNumber.foreground': '#334155',
+                                'editorLineNumber.activeForeground': '#64748b',
+                                'editor.selectionBackground': '#3b82f640',
+                                'editorCursor.foreground': '#3b82f6',
+                                'editorGutter.background': '#080c16',
+                                'scrollbarSlider.background': '#1e293b80',
+                                'scrollbarSlider.hoverBackground': '#334155',
+                            },
+                        });
+                        monacoReadyRef.current = true;
+                    }
+
+                    if (editorRef.current) {
+                        editorRef.current.dispose();
+                    }
+
+                    editorRef.current = monaco.editor.create(containerRef.current, {
+                        value: value || '',
+                        language: 'robot',
+                        theme: 'nlp-dark',
+                        readOnly: true,
+                        minimap: { enabled: false },
+                        fontSize: 13,
+                        fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+                        fontLigatures: true,
+                        lineNumbers: 'on',
+                        scrollBeyondLastLine: false,
+                        renderLineHighlight: 'line',
+                        automaticLayout: true,
+                        padding: { top: 12, bottom: 12 },
+                        scrollbar: {
+                            vertical: 'auto',
+                            horizontal: 'auto',
+                            verticalScrollbarSize: 6,
+                            horizontalScrollbarSize: 6,
+                        },
+                        overviewRulerBorder: false,
+                        hideCursorInOverviewRuler: true,
+                        contextmenu: false,
+                        wordWrap: 'on',
+                    });
+                });
+
+                return () => {
+                    if (editorRef.current) {
+                        editorRef.current.dispose();
+                        editorRef.current = null;
+                    }
+                };
+            }, []);
+
+            // Update content when value changes
+            useEffect(() => {
+                if (editorRef.current && value !== undefined) {
+                    const model = editorRef.current.getModel();
+                    if (model && model.getValue() !== value) {
+                        model.setValue(value);
+                        // Auto-scroll to bottom
+                        const lineCount = model.getLineCount();
+                        editorRef.current.revealLine(lineCount);
+                    }
+                }
+            }, [value]);
+
+            return <div ref={containerRef} style={{ width:'100%', height:'100%' }} />;
+        }
+
+        // ─── Main App ────────────────────────────────────
+        function App() {
+            const [connected, setConnected] = useState(false);
+            const wsRef = useRef(null);
+
+            const [nlpInput, setNlpInput] = useState("");
+            const [startUrl, setStartUrl] = useState("");
+            const [username, setUsername] = useState("");
+            const [password, setPassword] = useState("");
+            const [showCreds, setShowCreds] = useState(false);
+
+            const [isRunning, setIsRunning] = useState(false);
+            const [isPaused, setIsPaused] = useState(false);
+            const [steps, setSteps] = useState([]);
+            const [stepStatuses, setStepStatuses] = useState([]);
+            const [currentStep, setCurrentStep] = useState(-1);
+            const [statusMsg, setStatusMsg] = useState("");
+
+            const [screenshot, setScreenshot] = useState(null);
+            const [rfLines, setRfLines] = useState([]);
+            const [finalScript, setFinalScript] = useState("");
+            const [liveScript, setLiveScript] = useState("");
+            const [result, setResult] = useState(null);
+            const [copyLabel, setCopyLabel] = useState("Copy");
+
+            // Build live preview script as lines come in
+            useEffect(() => {
+                if (finalScript) return; // use final script when available
+                if (rfLines.length === 0) return;
+                const preview = [
+                    "*** Settings ***",
+                    "Library    Browser",
+                    "",
+                    "*** Variables ***",
+                    "${BASE_URL}    " + (startUrl || "https://..."),
+                    username ? "${USERNAME}    SET_AT_RUNTIME" : null,
+                    password ? "${PASSWORD}    SET_AT_RUNTIME" : null,
+                    "",
+                    "*** Test Cases ***",
+                    "NLP Generated Test",
+                    "    [Documentation]    " + nlpInput.slice(0, 80),
+                    "    New Browser    chromium    headless=true",
+                    "    New Page    ${BASE_URL}",
+                    "",
+                    ...rfLines,
+                    "",
+                    "    [Teardown]    Close Browser",
+                ].filter(l => l !== null).join("\n");
+                setLiveScript(preview);
+            }, [rfLines, finalScript, startUrl, nlpInput, username, password]);
+
+            // ── WebSocket ────────────────────────────
+            const connect = useCallback(() => {
+                if (wsRef.current?.readyState === WebSocket.OPEN) return;
+                const ws = new WebSocket(`${WS_BASE}/nlp-test/ws`);
+                wsRef.current = ws;
+                ws.onopen = () => setConnected(true);
+                ws.onclose = () => { setConnected(false); setIsRunning(false); };
+                ws.onerror = () => setConnected(false);
+                ws.onmessage = (e) => handleMsg(JSON.parse(e.data));
+            }, []);
+
+            const send = useCallback((msg) => {
+                if (wsRef.current?.readyState === WebSocket.OPEN)
+                    wsRef.current.send(JSON.stringify(msg));
+            }, []);
+
+            const handleMsg = useCallback((d) => {
+                switch (d.type) {
+                    case "connected": break;
+                    case "status": setStatusMsg(d.message); break;
+                    case "steps_planned":
+                        setSteps(d.steps);
+                        setStepStatuses(d.steps.map(() => "pending"));
+                        break;
+                    case "step_start":
+                        setCurrentStep(d.index);
+                        setStepStatuses(p => { const n=[...p]; if(d.index>=0) n[d.index]="running"; return n; });
+                        setStatusMsg(`Step ${d.index+1}: ${d.description}`);
+                        break;
+                    case "step_complete":
+                        if (d.screenshot_b64) setScreenshot(d.screenshot_b64);
+                        if (d.rf_line) setRfLines(p => [...p, d.rf_line]);
+                        setStepStatuses(p => { const n=[...p]; if(d.index>=0) n[d.index]=d.status==="skipped"?"skipped":"success"; return n; });
+                        break;
+                    case "step_failed":
+                        if (d.screenshot_b64) setScreenshot(d.screenshot_b64);
+                        setStepStatuses(p => { const n=[...p]; if(d.index>=0) n[d.index]="failed"; return n; });
+                        setStatusMsg(`Step ${d.index+1} failed: ${d.error}`);
+                        break;
+                    case "rf_script_complete":
+                        setFinalScript(d.script);
+                        setStatusMsg("✓ Test script generated!");
+                        break;
+                    case "execution_complete":
+                        setIsRunning(false); setResult(d);
+                        break;
+                    case "error":
+                        setStatusMsg(`Error: ${d.message}`); setIsRunning(false);
+                        break;
+                }
+            }, []);
+
+            useEffect(() => { connect(); return () => wsRef.current?.close(); }, [connect]);
+
+            const handleStart = () => {
+                if (!nlpInput.trim() || !startUrl.trim()) return;
+                setSteps([]); setStepStatuses([]); setCurrentStep(-1);
+                setRfLines([]); setFinalScript(""); setLiveScript(""); setScreenshot(null);
+                setResult(null); setIsRunning(true); setIsPaused(false);
+                send({
+                    type: "start",
+                    nlp_input: nlpInput.trim(),
+                    start_url: startUrl.trim(),
+                    username: username.trim(),
+                    password: password.trim(),
+                });
+            };
+
+            const handlePause = () => { send({ type: isPaused ? "resume" : "pause" }); setIsPaused(!isPaused); };
+            const handleStop = () => { send({ type: "stop" }); setIsRunning(false); setIsPaused(false); };
+            const handleRetry = (i) => { send({ type: "retry_step", step_index: i }); setStepStatuses(p => { const n=[...p]; n[i]="running"; return n; }); };
+
+            const handleCopy = () => {
+                navigator.clipboard.writeText(finalScript || liveScript);
+                setCopyLabel("✓ Copied"); setTimeout(() => setCopyLabel("Copy"), 2000);
+            };
+
+            const handleDownload = () => {
+                const blob = new Blob([finalScript || liveScript], { type: "text/plain" });
+                const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+                a.download = `test_${Date.now()}.robot`; a.click();
+            };
+
+            const canStart = nlpInput.trim() && startUrl.trim() && connected && !isRunning;
+            const displayScript = finalScript || liveScript;
+
+            return (
+                <div style={S.container}>
+                    {/* ── Header ──────────────────── */}
+                    <div style={S.header}>
+                        <div style={S.headerLeft}>
+                            <div style={S.logo}>⚡</div>
+                            <h1 style={S.title}>NLP Test Generator</h1>
+                            <div style={{...S.dot, background: connected ? '#22c55e' : '#ef4444'}} />
+                        </div>
+                        <div style={S.headerRight}>
+                            {result && <>
+                                <span style={{...S.pill, background:'#052e16', color:'#4ade80'}}>{result.passed} passed</span>
+                                {result.failed > 0 && <span style={{...S.pill, background:'#2a0a0a', color:'#fca5a5'}}>{result.failed} failed</span>}
+                            </>}
+                        </div>
+                    </div>
+
+                    {/* ── Input Section ────────────── */}
+                    <div style={S.inputWrap}>
+                        {/* Row 1: URL + Credentials toggle */}
+                        <div style={S.row}>
+                            <div style={{flex:1}}>
+                                <label style={S.label}>Target URL</label>
+                                <input style={S.input} placeholder="https://your-app.com" value={startUrl}
+                                    onChange={e=>setStartUrl(e.target.value)} disabled={isRunning} />
+                            </div>
+                            <button style={{...S.credToggle, color: showCreds ? '#3b82f6' : '#64748b'}}
+                                onClick={() => setShowCreds(!showCreds)} type="button">
+                                🔑 {showCreds ? 'Hide' : 'Credentials'}
+                            </button>
+                        </div>
+
+                        {/* Credentials (collapsible) */}
+                        {showCreds && (
+                            <div style={{...S.row, animation:'fadeIn 0.2s ease'}}>
+                                <div style={{flex:1}}>
+                                    <label style={S.label}>Username / Email</label>
+                                    <input style={S.input} placeholder="admin@example.com" value={username}
+                                        onChange={e=>setUsername(e.target.value)} disabled={isRunning}
+                                        autoComplete="off" />
+                                </div>
+                                <div style={{flex:1}}>
+                                    <label style={S.label}>Password</label>
+                                    <input style={S.input} type="password" placeholder="••••••••" value={password}
+                                        onChange={e=>setPassword(e.target.value)} disabled={isRunning}
+                                        autoComplete="new-password" />
+                                </div>
+                                <div style={S.credNote}>
+                                    🔒 Never sent to AI
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Row 2: NLP + Controls */}
+                        <div style={S.row}>
+                            <div style={{flex:1}}>
+                                <label style={S.label}>Test Description</label>
+                                <input style={S.input}
+                                    placeholder='e.g. "Login with credentials, navigate to orders, create a new order with quantity 5"'
+                                    value={nlpInput} onChange={e=>setNlpInput(e.target.value)} disabled={isRunning}
+                                    onKeyDown={e => e.key==="Enter" && canStart && handleStart()} />
+                            </div>
+                            <div style={S.btns}>
+                                {!isRunning ? (
+                                    <button style={{...S.btn,...S.btnGo, opacity:canStart?1:0.4}} onClick={handleStart} disabled={!canStart}>
+                                        ▶ Generate
+                                    </button>
+                                ) : (<>
+                                    <button style={{...S.btn,...S.btnWarn}} onClick={handlePause}>
+                                        {isPaused ? "▶" : "⏸"}
+                                    </button>
+                                    <button style={{...S.btn,...S.btnDanger}} onClick={handleStop}>■</button>
+                                </>)}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* ── Main Split ───────────────── */}
+                    <div style={S.split}>
+                        {/* Left 60% */}
+                        <div style={S.left}>
+                            <div style={S.ssWrap}>
+                                {screenshot ? (
+                                    <img src={`data:image/png;base64,${screenshot}`} alt="Browser" style={S.ssImg} />
+                                ) : (
+                                    <div style={S.placeholder}>
+                                        <div style={{fontSize:44,opacity:0.15}}>🌐</div>
+                                        <div style={S.phText}>Browser preview appears here</div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {statusMsg && (
+                                <div style={S.status}>
+                                    {isRunning && <span style={S.spinner}/>}
+                                    <span>{statusMsg}</span>
+                                </div>
+                            )}
+
+                            {steps.length > 0 && (
+                                <div style={S.stepsWrap}>
+                                    <div style={S.stepsHead}>
+                                        Steps {stepStatuses.filter(s=>s==="success"||s==="skipped").length}/{steps.length}
+                                    </div>
+                                    <div style={S.stepsList}>
+                                        {steps.map((step, i) => (
+                                            <div key={i} style={{
+                                                ...S.stepRow,
+                                                borderLeftColor: COLORS[stepStatuses[i]]||COLORS.pending,
+                                                background: currentStep===i ? '#111827' : 'transparent',
+                                                animation: stepStatuses[i]==="running" ? "pulse 1.5s infinite" : "none",
+                                            }}>
+                                                <span style={{...S.stepIcon, color:COLORS[stepStatuses[i]]}}>{ICONS[stepStatuses[i]]||ICONS.pending}</span>
+                                                <span style={S.stepAction}>{step.action}</span>
+                                                <span style={S.stepDesc}>{step.description}</span>
+                                                {stepStatuses[i]==="failed" && (
+                                                    <button style={S.retryBtn} onClick={()=>handleRetry(i)}>↻</button>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        <div style={S.divider}/>
+
+                        {/* Right 40% — Monaco Editor */}
+                        <div style={S.right}>
+                            <div style={S.codeHead}>
+                                <span style={S.codeTitle}>
+                                    {finalScript ? '✓ Generated .robot' : rfLines.length > 0 ? 'Building...' : 'RF Browser Code'}
+                                </span>
+                                <div style={{display:'flex',gap:4}}>
+                                    {displayScript && <>
+                                        <button style={S.codeBtn} onClick={handleCopy}>{copyLabel}</button>
+                                        <button style={S.codeBtn} onClick={handleDownload}>↓ .robot</button>
+                                    </>}
+                                </div>
+                            </div>
+                            <div style={S.monacoWrap}>
+                                {displayScript ? (
+                                    <MonacoEditor value={displayScript} />
+                                ) : (
+                                    <div style={S.placeholder}>
+                                        <div style={{fontFamily:"'JetBrains Mono'",fontSize:28,opacity:0.1}}>{ "{  }" }</div>
+                                        <div style={S.phText}>Robot Framework code builds here live</div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // ─── Styles ──────────────────────────────────────
+        const S = {
+            container: { width:'100%', height:'100vh', display:'flex', flexDirection:'column', background:'#0a0e1a', fontFamily:"'Inter','Segoe UI',sans-serif", overflow:'hidden' },
+
+            header: { display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 16px', borderBottom:'1px solid #151b2e', flexShrink:0, background:'#0d1220' },
+            headerLeft: { display:'flex', alignItems:'center', gap:10 },
+            headerRight: { display:'flex', gap:6 },
+            logo: { fontSize:16, width:28, height:28, display:'flex', alignItems:'center', justifyContent:'center', background:'linear-gradient(135deg,#3b82f6,#8b5cf6)', borderRadius:7, fontWeight:700 },
+            title: { fontSize:14, fontWeight:700, color:'#f1f5f9', letterSpacing:'-0.02em', fontFamily:"'JetBrains Mono',monospace" },
+            dot: { width:7, height:7, borderRadius:'50%' },
+            pill: { fontSize:11, padding:'2px 10px', borderRadius:99, fontWeight:600, fontFamily:"'JetBrains Mono',monospace" },
+
+            inputWrap: { padding:'10px 16px', borderBottom:'1px solid #151b2e', flexShrink:0, display:'flex', flexDirection:'column', gap:8, background:'#0d1220' },
+            row: { display:'flex', gap:10, alignItems:'flex-end' },
+            label: { display:'block', fontSize:10, color:'#4b5563', marginBottom:3, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em' },
+            input: { width:'100%', padding:'7px 10px', fontSize:13, background:'#111827', border:'1px solid #1e293b', borderRadius:5, color:'#e2e8f0', fontFamily:"'Inter',sans-serif", transition:'border-color 0.15s' },
+
+            credToggle: { background:'none', border:'1px solid #1e293b', borderRadius:5, padding:'7px 12px', fontSize:12, cursor:'pointer', fontFamily:"'Inter',sans-serif", whiteSpace:'nowrap', flexShrink:0, transition:'all 0.15s' },
+            credNote: { fontSize:10, color:'#22c55e', whiteSpace:'nowrap', padding:'0 0 6px 0', flexShrink:0, fontWeight:600 },
+
+            btns: { display:'flex', gap:4, flexShrink:0 },
+            btn: { padding:'7px 16px', fontSize:13, fontWeight:600, border:'none', borderRadius:5, cursor:'pointer', fontFamily:"'JetBrains Mono',monospace", whiteSpace:'nowrap', transition:'all 0.12s' },
+            btnGo: { background:'linear-gradient(135deg,#3b82f6,#2563eb)', color:'#fff', minWidth:110 },
+            btnWarn: { background:'#f59e0b', color:'#000', minWidth:36 },
+            btnDanger: { background:'#ef4444', color:'#fff', minWidth:36 },
+
+            split: { flex:1, display:'flex', overflow:'hidden', minHeight:0 },
+            divider: { width:1, background:'#151b2e', flexShrink:0 },
+
+            left: { flex:'0 0 58%', display:'flex', flexDirection:'column', overflow:'hidden' },
+            ssWrap: { flex:'0 0 42%', padding:10, display:'flex', alignItems:'center', justifyContent:'center', background:'#070a14', borderBottom:'1px solid #151b2e', overflow:'hidden' },
+            ssImg: { maxWidth:'100%', maxHeight:'100%', objectFit:'contain', borderRadius:4, border:'1px solid #1e293b' },
+            placeholder: { textAlign:'center', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'100%', gap:6 },
+            phText: { fontSize:12, color:'#374151', fontFamily:"'Inter',sans-serif" },
+
+            status: { padding:'6px 14px', fontSize:11, color:'#94a3b8', background:'#111827', borderBottom:'1px solid #1e293b', display:'flex', alignItems:'center', gap:7, flexShrink:0, fontFamily:"'JetBrains Mono',monospace" },
+            spinner: { display:'inline-block', width:10, height:10, border:'2px solid #1e293b', borderTopColor:'#3b82f6', borderRadius:'50%', animation:'spin 0.7s linear infinite', flexShrink:0 },
+
+            stepsWrap: { flex:1, display:'flex', flexDirection:'column', overflow:'hidden' },
+            stepsHead: { padding:'6px 14px', fontSize:10, fontWeight:700, color:'#4b5563', textTransform:'uppercase', letterSpacing:'0.06em', borderBottom:'1px solid #151b2e', flexShrink:0, fontFamily:"'JetBrains Mono',monospace" },
+            stepsList: { flex:1, overflowY:'auto', padding:'2px 0' },
+            stepRow: { display:'flex', alignItems:'center', gap:8, padding:'4px 14px', borderLeft:'3px solid transparent', transition:'background 0.12s' },
+            stepIcon: { fontSize:12, fontWeight:700, width:14, textAlign:'center', flexShrink:0, fontFamily:"'JetBrains Mono',monospace" },
+            stepAction: { fontSize:9, fontWeight:700, color:'#3b82f6', textTransform:'uppercase', flexShrink:0, letterSpacing:'0.04em', fontFamily:"'JetBrains Mono',monospace", minWidth:55 },
+            stepDesc: { fontSize:11.5, color:'#cbd5e1', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', flex:1, minWidth:0 },
+            retryBtn: { background:'none', border:'1px solid #374151', color:'#f59e0b', fontSize:13, cursor:'pointer', borderRadius:3, padding:'1px 6px', flexShrink:0 },
+
+            right: { flex:'0 0 42%', display:'flex', flexDirection:'column', overflow:'hidden' },
+            codeHead: { display:'flex', alignItems:'center', justifyContent:'space-between', padding:'6px 14px', borderBottom:'1px solid #151b2e', flexShrink:0, background:'#0d1220' },
+            codeTitle: { fontSize:10, fontWeight:700, color:'#4b5563', textTransform:'uppercase', letterSpacing:'0.06em', fontFamily:"'JetBrains Mono',monospace" },
+            codeBtn: { background:'#111827', border:'1px solid #1e293b', color:'#94a3b8', fontSize:10, padding:'3px 8px', borderRadius:3, cursor:'pointer', fontFamily:"'JetBrains Mono',monospace", transition:'all 0.12s' },
+            monacoWrap: { flex:1, overflow:'hidden', background:'#080c16' },
+        };
+
+        ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+    </script>
+</body>
+</html>
+
+
+
 _____&&&_______
 
 """
