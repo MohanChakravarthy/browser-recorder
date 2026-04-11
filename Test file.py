@@ -1911,3 +1911,609 @@ async def run_cli(
         "snapshot_file": snapshot_file,
         "screenshot_file": screenshot_file,
     }
+
+
+
+
+&____₹₹_____
+
+"""
+NLP Test Generator — Standalone FastAPI Server
+Run: python app.py
+
+Prerequisites:
+  npm install -g @playwright/cli@latest
+  playwright-cli install
+  pip install fastapi uvicorn python-dotenv websockets openai
+"""
+
+import asyncio
+import base64
+import concurrent.futures
+import glob
+import json
+import os
+import re
+import subprocess
+import tempfile
+import traceback
+import uuid
+from datetime import datetime
+from pathlib import Path
+from typing import Optional
+
+from dotenv import load_dotenv
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, HTMLResponse
+
+from ai_service import AIService
+from playwright_parser import assemble_robot_file, playwright_to_rf
+
+load_dotenv()
+
+# ─── App Setup ────────────────────────────────────────────────────
+
+app = FastAPI(title="NLP Test Generator", version="1.0.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ─── Configuration ────────────────────────────────────────────────
+
+PLAYWRIGHT_CLI = os.getenv("PLAYWRIGHT_CLI_PATH", "playwright-cli")
+WORKSPACE_DIR = Path(os.getenv("NLP_WORKSPACE", os.path.join(tempfile.gettempdir(), "nlp-test-workspaces")))
+GENERATED_TESTS_DIR = Path("./generated_tests")
+WORKSPACE_DIR.mkdir(parents=True, exist_ok=True)
+GENERATED_TESTS_DIR.mkdir(parents=True, exist_ok=True)
+
+ai_service = AIService()
+
+# Thread pool for running subprocess on Windows
+_executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
+
+
+# ─── Subprocess Helper (Windows Compatible) ───────────────────────
+
+async def run_cli(
+    command: str,
+    session: str = "default",
+    cwd: str = "",
+    timeout: float = 30.0,
+) -> dict:
+    """Execute playwright-cli command using thread pool (Windows compatible)."""
+    full_cmd = f"{PLAYWRIGHT_CLI} -s={session} {command}"
+    work_dir = cwd or str(WORKSPACE_DIR)
+
+    print(f"  [CLI] {full_cmd}")
+
+    def _run():
+        try:
+            result = subprocess.run(
+                full_cmd,
+                shell=True,
+                capture_output=True,
+                cwd=work_dir,
+                timeout=timeout,
+                encoding="utf-8",
+                errors="replace",
+            )
+            return result.stdout, result.stderr, result.returncode
+        except subprocess.TimeoutExpired:
+            return "", "Command timed out", -1
+        except Exception as e:
+            return "", str(e), -1
+
+    loop = asyncio.get_event_loop()
+    stdout_str, stderr_str, returncode = await loop.run_in_executor(_executor, _run)
+
+    print(f"  [CLI stdout] {stdout_str[:500]}")
+    print(f"  [CLI stderr] {stderr_str[:200]}")
+    print(f"  [CLI return] {returncode}")
+
+    # Extract snapshot file path (handles both / and \ paths)
+    snapshot_file = None
+    for line in stdout_str.split("\n"):
+        match = re.search(r"(\.playwright-cli[/\\][^\s\)\]]+\.yml)", line)
+        if match:
+            snapshot_file = os.path.join(work_dir, match.group(1))
+
+    # Extract screenshot file path
+    screenshot_file = None
+    for line in stdout_str.split("\n"):
+        match = re.search(r"(\.playwright-cli[/\\][^\s\)\]]+\.png)", line)
+        if match:
+            screenshot_file = os.path.join(work_dir, match.group(1))
+
+    return {
+        "stdout": stdout_str,
+        "stderr": stderr_str,
+        "returncode": returncode,
+        "snapshot_file": snapshot_file,
+        "screenshot_file": screenshot_file,
+    }
+
+
+def read_file_content(path: str) -> str:
+    """Read file content safely."""
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            return f.read()
+    except (FileNotFoundError, IOError):
+        return ""
+
+
+def find_latest_file(directory: str, pattern: str) -> Optional[str]:
+    """Find most recent file matching glob pattern."""
+    files = sorted(glob.glob(os.path.join(directory, pattern)), key=os.path.getmtime, reverse=True)
+    return files[0] if files else None
+
+
+def file_to_base64(path: str) -> Optional[str]:
+    """Read file and return base64 string."""
+    try:
+        with open(path, "rb") as f:
+            return base64.b64encode(f.read()).decode("utf-8")
+    except (FileNotFoundError, IOError):
+        return None
+
+
+def extract_playwright_code(stdout: str) -> Optional[str]:
+    """Extract playwright_code line from CLI output."""
+    for line in stdout.strip().split("\n"):
+        line = line.strip()
+        if line.startswith("await page.") or line.startswith("page."):
+            return line
+    return None
+
+
+# ─── Orchestrator ─────────────────────────────────────────────────
+
+class Orchestrator:
+    """Manages the NLP → playwright-cli → RF pipeline with WebSocket streaming."""
+
+    def __init__(self, session_id: str, ws: WebSocket):
+        self.session_id = session_id
+        self.ws = ws
+        self.workspace = str(WORKSPACE_DIR / session_id)
+        self.cli_dir = os.path.join(self.workspace, ".playwright-cli")
+        self.paused = False
+        self.stopped = False
+        self.rf_lines: list[str] = []
+        self.steps: list[dict] = []
+
+        os.makedirs(self.workspace, exist_ok=True)
+
+    async def send(self, msg: dict):
+        """Send message to client."""
+        try:
+            await self.ws.send_json(msg)
+        except Exception:
+            pass
+
+    async def wait_if_paused(self):
+        """Block while paused."""
+        while self.paused and not self.stopped:
+            await asyncio.sleep(0.3)
+
+    async def screenshot(self) -> Optional[str]:
+        """Take screenshot and return base64."""
+        result = await run_cli("screenshot", self.session_id, self.workspace)
+        path = result.get("screenshot_file") or find_latest_file(self.cli_dir, "*.png")
+        return file_to_base64(path) if path else None
+
+    async def snapshot(self) -> str:
+        """Take snapshot and return YAML content."""
+        result = await run_cli("snapshot", self.session_id, self.workspace)
+        path = result.get("snapshot_file") or find_latest_file(self.cli_dir, "*.yml")
+        return read_file_content(path) if path else ""
+
+    async def execute_step(self, step: dict, index: int) -> dict:
+        """Execute a single test step. Returns result dict."""
+
+        action = step.get("action", "")
+        description = step.get("description", "")
+
+        await self.send({
+            "type": "step_start",
+            "index": index,
+            "description": description,
+            "action": action,
+        })
+
+        try:
+            # ── Navigate ──────────────────────────────
+            if action == "navigate":
+                target = step.get("target", "")
+                await run_cli(f"goto {target}", self.session_id, self.workspace)
+                await asyncio.sleep(1.5)
+                pw_code = f"page.goto('{target}')"
+                rf_line = f"    Go To    {target}"
+
+            # ── Wait ──────────────────────────────────
+            elif action == "wait":
+                duration = step.get("value", "2")
+                await asyncio.sleep(float(duration))
+                rf_line = f"    Sleep    {duration}s"
+                pw_code = f"page.waitForTimeout({int(float(duration) * 1000)})"
+
+            # ── Assertions ────────────────────────────
+            elif action.startswith("assert"):
+                snapshot_content = await self.snapshot()
+                assertion = await ai_service.generate_assertion(snapshot_content, step)
+                rf_line = assertion.get("full_line", f"    # Assertion: {description}")
+                pw_code = f"// Assertion: {description}"
+
+            # ── Interactive actions ───────────────────
+            else:
+                # Get snapshot for element picking
+                snapshot_content = await self.snapshot()
+
+                # AI picks the right element ref
+                element_info = await ai_service.pick_element(snapshot_content, step)
+                ref = element_info.get("ref")
+
+                if not ref:
+                    raise Exception(
+                        f"Could not find element for: {description}. "
+                        f"AI reasoning: {element_info.get('reasoning', 'unknown')}"
+                    )
+
+                # Build playwright-cli command
+                if action == "fill":
+                    value = step.get("value", "")
+                    cli_cmd = f'fill {ref} "{value}"'
+                elif action == "select":
+                    value = step.get("value", "")
+                    cli_cmd = f'select {ref} "{value}"'
+                elif action == "check":
+                    cli_cmd = f"check {ref}"
+                elif action == "uncheck":
+                    cli_cmd = f"uncheck {ref}"
+                elif action == "hover":
+                    cli_cmd = f"hover {ref}"
+                elif action == "press_key":
+                    key = step.get("value", "Enter")
+                    cli_cmd = f"press {key}"
+                else:  # click is default
+                    cli_cmd = f"click {ref}"
+
+                # Execute
+                result = await run_cli(cli_cmd, self.session_id, self.workspace)
+
+                if result["returncode"] not in (0, None):
+                    error_msg = result["stderr"] or result["stdout"]
+                    if error_msg.strip():
+                        raise Exception(f"playwright-cli error: {error_msg.strip()[:200]}")
+
+                # Wait for dynamic content after state-changing actions
+                if action == "click" and any(
+                    word in description.lower()
+                    for word in ["submit", "save", "create", "delete", "send", "login", "sign", "confirm", "add", "remove", "update"]
+                ):
+                    await asyncio.sleep(1.5)
+
+                # Extract playwright_code from output
+                pw_code = extract_playwright_code(result["stdout"]) or f"// {cli_cmd}"
+
+                # Convert to RF using deterministic parser
+                clean_code = pw_code
+                if clean_code.startswith("await "):
+                    clean_code = clean_code[6:]
+                if clean_code.startswith("//"):
+                    rf_line = f"    # Action: {cli_cmd}"
+                else:
+                    rf_line = playwright_to_rf(clean_code)
+
+            # Capture screenshot
+            screenshot_b64 = await self.screenshot()
+
+            # Store RF line
+            self.rf_lines.append(rf_line)
+
+            return {
+                "status": "success",
+                "rf_line": rf_line,
+                "playwright_code": pw_code,
+                "screenshot_b64": screenshot_b64,
+                "error": None,
+            }
+
+        except Exception as e:
+            screenshot_b64 = await self.screenshot()
+            error_msg = str(e)
+
+            self.rf_lines.append(f"    # FAILED: {description} — {error_msg[:100]}")
+
+            return {
+                "status": "failed",
+                "rf_line": f"    # FAILED: {description}",
+                "playwright_code": "",
+                "screenshot_b64": screenshot_b64,
+                "error": error_msg,
+            }
+
+    async def run(self, nlp_input: str, start_url: str):
+        """Main execution pipeline."""
+        try:
+            # ── 1. Break NLP into steps ───────────────
+            await self.send({"type": "status", "message": f"Analyzing test description using {ai_service.provider_display}..."})
+
+            self.steps = await ai_service.break_into_steps(nlp_input, start_url)
+
+            await self.send({
+                "type": "steps_planned",
+                "steps": self.steps,
+                "total": len(self.steps),
+            })
+
+            print(f"\n[Orchestrator] {len(self.steps)} steps planned:")
+            for s in self.steps:
+                print(f"  {s['step']}. [{s['action']}] {s['description']}")
+
+            # ── 2. Open browser ───────────────────────
+            await self.send({"type": "status", "message": "Opening browser..."})
+
+            result = await run_cli(f"open {start_url}", self.session_id, self.workspace)
+
+            if result["returncode"] not in (0, None):
+                stderr = result["stderr"].strip()
+                if stderr:
+                    await self.send({"type": "error", "message": f"Failed to open browser: {stderr[:300]}"})
+                    return
+
+            # Wait for page to load
+            await asyncio.sleep(2)
+
+            # Initial screenshot
+            screenshot_b64 = await self.screenshot()
+            if screenshot_b64:
+                await self.send({
+                    "type": "step_complete",
+                    "index": -1,
+                    "status": "success",
+                    "screenshot_b64": screenshot_b64,
+                    "rf_line": f"    New Page    {start_url}",
+                    "playwright_code": f"page.goto('{start_url}')",
+                })
+
+            # ── 3. Execute each step ──────────────────
+            passed = 0
+            failed = 0
+
+            for i, step in enumerate(self.steps):
+                if self.stopped:
+                    await self.send({"type": "status", "message": "Stopped by user."})
+                    break
+
+                await self.wait_if_paused()
+
+                # Skip initial navigate if URL matches
+                if i == 0 and step.get("action") == "navigate":
+                    target = step.get("target", "")
+                    if target in (start_url, "/", "") or start_url.rstrip("/").endswith(target.rstrip("/")):
+                        self.rf_lines.append(f"    # Navigation to {start_url} — handled by New Page")
+                        await self.send({
+                            "type": "step_complete",
+                            "index": i,
+                            "status": "skipped",
+                            "screenshot_b64": screenshot_b64,
+                            "rf_line": "    # Initial navigation — handled by New Page",
+                            "playwright_code": "",
+                        })
+                        passed += 1
+                        continue
+
+                print(f"\n[Step {i + 1}/{len(self.steps)}] {step['action']}: {step['description']}")
+
+                step_result = await self.execute_step(step, i)
+
+                if step_result["status"] == "success":
+                    passed += 1
+                    await self.send({
+                        "type": "step_complete",
+                        "index": i,
+                        "status": "success",
+                        "screenshot_b64": step_result["screenshot_b64"],
+                        "rf_line": step_result["rf_line"],
+                        "playwright_code": step_result["playwright_code"],
+                    })
+                    print(f"  ✓ RF: {step_result['rf_line'].strip()}")
+                else:
+                    failed += 1
+                    await self.send({
+                        "type": "step_failed",
+                        "index": i,
+                        "error": step_result["error"],
+                        "screenshot_b64": step_result["screenshot_b64"],
+                    })
+                    print(f"  ✗ Error: {step_result['error']}")
+
+                await asyncio.sleep(0.5)
+
+            # ── 4. Assemble .robot file ───────────────
+            test_name = re.sub(r"[^\w\s]", "", nlp_input)[:60].strip().title()
+            robot_script = assemble_robot_file(
+                test_name=test_name,
+                test_description=nlp_input,
+                base_url=start_url,
+                rf_lines=self.rf_lines,
+            )
+
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"test_{timestamp}.robot"
+            filepath = GENERATED_TESTS_DIR / filename
+            with open(filepath, "w", encoding="utf-8") as f:
+                f.write(robot_script)
+
+            await self.send({
+                "type": "rf_script_complete",
+                "script": robot_script,
+                "filename": filename,
+            })
+
+            await self.send({
+                "type": "execution_complete",
+                "total_steps": len(self.steps),
+                "passed": passed,
+                "failed": failed,
+            })
+
+            print(f"\n[Done] {passed} passed, {failed} failed → {filename}")
+
+            # Cleanup
+            await run_cli("close", self.session_id, self.workspace)
+
+        except Exception as e:
+            error_detail = traceback.format_exc()
+            print(f"\n[Error]\n{error_detail}")
+            await self.send({"type": "error", "message": str(e) or error_detail[-500:]})
+
+
+# ─── WebSocket Endpoint ──────────────────────────────────────────
+
+@app.websocket("/nlp-test/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    """WebSocket endpoint for NLP test generation."""
+    await websocket.accept()
+
+    session_id = str(uuid.uuid4())[:8]
+    orchestrator: Optional[Orchestrator] = None
+    task: Optional[asyncio.Task] = None
+
+    await websocket.send_json({"type": "connected", "session_id": session_id})
+    print(f"\n[WS] Client connected: {session_id}")
+
+    try:
+        while True:
+            data = await websocket.receive_json()
+            msg_type = data.get("type")
+
+            if msg_type == "start":
+                nlp_input = data.get("nlp_input", "").strip()
+                start_url = data.get("start_url", "").strip()
+
+                if not nlp_input or not start_url:
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": "Both nlp_input and start_url are required.",
+                    })
+                    continue
+
+                print(f"\n[Start] URL: {start_url}")
+                print(f"[Start] NLP: {nlp_input}")
+
+                orchestrator = Orchestrator(session_id, websocket)
+                task = asyncio.create_task(orchestrator.run(nlp_input, start_url))
+
+            elif msg_type == "pause" and orchestrator:
+                orchestrator.paused = True
+                await websocket.send_json({"type": "status", "message": "Paused."})
+
+            elif msg_type == "resume" and orchestrator:
+                orchestrator.paused = False
+                await websocket.send_json({"type": "status", "message": "Resumed."})
+
+            elif msg_type == "stop" and orchestrator:
+                orchestrator.stopped = True
+                if task:
+                    task.cancel()
+                await websocket.send_json({"type": "status", "message": "Stopped."})
+
+            elif msg_type == "retry_step" and orchestrator and orchestrator.steps:
+                idx = data.get("step_index", 0)
+                if 0 <= idx < len(orchestrator.steps):
+                    step_result = await orchestrator.execute_step(orchestrator.steps[idx], idx)
+                    msg_key = "step_complete" if step_result["status"] == "success" else "step_failed"
+                    await websocket.send_json({"type": msg_key, "index": idx, **step_result})
+
+    except WebSocketDisconnect:
+        print(f"[WS] Client disconnected: {session_id}")
+        if orchestrator:
+            orchestrator.stopped = True
+            await run_cli("close", session_id, str(WORKSPACE_DIR / session_id))
+    except Exception as e:
+        print(f"[WS Error] {traceback.format_exc()}")
+
+
+# ─── REST Endpoints ───────────────────────────────────────────────
+
+@app.get("/api/generated-tests")
+async def list_tests():
+    """List generated .robot files."""
+    files = sorted(GENERATED_TESTS_DIR.glob("*.robot"), key=os.path.getmtime, reverse=True)
+    return [
+        {
+            "filename": f.name,
+            "created": datetime.fromtimestamp(f.stat().st_mtime).isoformat(),
+            "size_bytes": f.stat().st_size,
+        }
+        for f in files
+    ]
+
+
+@app.get("/api/generated-tests/{filename}")
+async def download_test(filename: str):
+    """Download a generated .robot file."""
+    filepath = GENERATED_TESTS_DIR / filename
+    if not filepath.exists():
+        return {"error": "File not found"}
+    return FileResponse(filepath, filename=filename, media_type="text/plain")
+
+
+@app.get("/api/health")
+async def health():
+    """Health check — verifies playwright-cli and AI provider."""
+    cli_ok = False
+    cli_version = "not found"
+    try:
+        result = subprocess.run(
+            f"{PLAYWRIGHT_CLI} --version",
+            shell=True,
+            capture_output=True,
+            encoding="utf-8",
+            timeout=10,
+        )
+        cli_ok = result.returncode == 0
+        cli_version = result.stdout.strip() if cli_ok else "not found"
+    except Exception:
+        pass
+
+    return {
+        "status": "ok" if cli_ok else "degraded",
+        "playwright_cli": {"installed": cli_ok, "version": cli_version},
+        "ai_provider": ai_service.provider_display,
+    }
+
+
+# ─── Serve React UI ──────────────────────────────────────────────
+
+@app.get("/")
+async def serve_ui():
+    """Serve the standalone HTML UI."""
+    html_path = Path(__file__).parent / "index.html"
+    if html_path.exists():
+        return HTMLResponse(html_path.read_text(encoding="utf-8"))
+    return HTMLResponse("<h2>Place index.html in the same directory as app.py</h2>")
+
+
+# ─── Run ──────────────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    import uvicorn
+
+    host = os.getenv("HOST", "0.0.0.0")
+    port = int(os.getenv("PORT", "8000"))
+    print(f"\n{'='*50}")
+    print(f"  NLP Test Generator")
+    print(f"  AI Provider: {ai_service.provider_display}")
+    print(f"  Server: http://{host}:{port}")
+    print(f"  WebSocket: ws://{host}:{port}/nlp-test/ws")
+    print(f"  Health: http://{host}:{port}/api/health")
+    print(f"{'='*50}\n")
+    uvicorn.run("app:app", host=host, port=port, reload=True)
