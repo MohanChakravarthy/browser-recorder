@@ -1605,3 +1605,246 @@ ____________index.html_________
 
 _____________
 
+"""
+AI Service — Uses openai SDK for Azure OpenAI, google-genai for Gemini
+Provider is selected via AI_PROVIDER env variable.
+"""
+
+import os
+import json
+import re
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# ─── Prompts ──────────────────────────────────────────────────────
+
+STEP_BREAKDOWN_PROMPT = """You are a QA automation expert. Break down the user's natural language test description into precise, sequential browser actions.
+
+RULES:
+- Each step must be a single atomic browser action
+- Include assertions/verifications as separate steps
+- Use clear, specific descriptions
+- Include expected values for assertions
+- First step should always be navigation if a URL context is given
+- Think about what a manual tester would do step by step
+
+IMPORTANT — CUSTOM DROPDOWNS:
+Modern UI frameworks (MUI, Bootstrap, Angular Material, Ant Design) do NOT use native <select> elements. Their dropdowns require TWO steps:
+1. Click the dropdown trigger to open it
+2. Click the option from the opened list
+
+When the test involves selecting from a dropdown:
+  WRONG: {"action": "select", "target": "category", "value": "Electronics"}
+  RIGHT:
+    {"step": N, "action": "click", "description": "Click Category dropdown to open it", "target": "Category dropdown"}
+    {"step": N+1, "action": "click", "description": "Select Electronics from dropdown list", "target": "Electronics option"}
+
+IMPORTANT — MODALS AND DIALOGS:
+After clicking a button that opens a modal/dialog, add a wait step before interacting with modal contents:
+    {"step": N, "action": "click", "description": "Click Create New button", "target": "Create New button"}
+    {"step": N+1, "action": "wait", "description": "Wait for dialog to appear", "value": "1"}
+    {"step": N+2, "action": "fill", "description": "Fill name in dialog", "target": "Name field", "value": "Test"}
+
+IMPORTANT — AFTER FORM SUBMISSIONS:
+After clicking submit/save/create/delete buttons, add a wait step for the response:
+    {"step": N, "action": "click", "description": "Click Submit", "target": "Submit button"}
+    {"step": N+1, "action": "wait", "description": "Wait for response", "value": "2"}
+    {"step": N+2, "action": "assert_visible", "description": "Verify success message", "target": "success message"}
+
+OUTPUT FORMAT - respond ONLY with a JSON array, no markdown, no explanation:
+[
+  {"step": 1, "action": "navigate", "description": "Navigate to login page", "target": "/login"},
+  {"step": 2, "action": "fill", "description": "Enter email address", "target": "email field", "value": "test@example.com"},
+  {"step": 3, "action": "click", "description": "Click the login button", "target": "login button"},
+  {"step": 4, "action": "wait", "description": "Wait for page to load", "value": "2"},
+  {"step": 5, "action": "assert_url", "description": "Verify redirected to dashboard", "expected": "/dashboard"}
+]
+
+Valid actions: navigate, click, fill, select, check, uncheck, hover, press_key, upload, assert_text, assert_visible, assert_url, assert_element_count, wait
+"""
+
+PICK_ELEMENT_PROMPT = """You are a browser automation expert. Given a YAML snapshot of a web page and a step description, identify the correct element ref to interact with.
+
+RULES:
+- Pick the SINGLE best matching element ref from the snapshot
+- Consider the step description, element roles, names, labels, and surrounding context
+- If the step says "first" or mentions order, pick the first matching element
+- If multiple similar elements exist (like multiple "Add to Cart" buttons), pick based on context
+- If the step is an assertion, identify the element to assert against
+- If no matching element exists, respond with ref: null
+
+OUTPUT FORMAT - respond ONLY with JSON, no markdown:
+{"ref": "e15", "confidence": "high", "reasoning": "Short explanation of why this element matches"}
+"""
+
+ASSERTION_PROMPT = """You are a QA automation expert generating Robot Framework Browser library assertions.
+
+Given a YAML snapshot and an assertion step, generate the correct RF Browser assertion keyword.
+
+AVAILABLE ASSERTION KEYWORDS:
+- Get Text    <locator>    ==    <expected>        (exact text match)
+- Get Text    <locator>    *=    <expected>        (contains text)
+- Get Url    ==    <expected>                       (exact URL)
+- Get Url    *=    <expected>                       (URL contains)
+- Get Element States    <locator>    contains    visible
+- Get Element States    <locator>    contains    enabled
+- Get Element States    <locator>    contains    checked
+- Get Element Count    <locator>    ==    <count>
+- Get Title    ==    <expected>
+
+LOCATOR SELECTION — use this priority from the snapshot element attributes:
+1. [data-testid="value"]     — always prefer if exists
+2. id=value                   — if meaningful, not auto-generated (skip mat-input-7, :r1:, css-1abc)
+3. role=type[name="value"]    — accessible and stable
+4. text=visible text          — for buttons/links
+5. [placeholder="value"]     — for inputs
+6. [aria-label="value"]      — when no visible text
+7. css=semantic-selector      — stable classes/attributes only
+
+OUTPUT FORMAT - respond ONLY with JSON, no markdown:
+{"rf_keyword": "Get Text", "locator": "[data-testid=\\"welcome-msg\\"]", "operator": "*=", "expected_value": "Welcome", "full_line": "    Get Text    [data-testid=\\"welcome-msg\\"]    *=    Welcome"}
+"""
+
+
+# ─── Provider Interface ──────────────────────────────────────────
+
+class AIProvider:
+    """Base class for AI providers."""
+    def call(self, system_prompt: str, user_message: str) -> str:
+        raise NotImplementedError
+
+
+class AzureOpenAIProvider(AIProvider):
+    """Azure OpenAI using the openai Python SDK."""
+
+    def __init__(self):
+        from openai import AzureOpenAI
+
+        self.api_key = os.getenv("AZURE_OPENAI_API_KEY", "")
+        self.endpoint = os.getenv("AZURE_OPENAI_ENDPOINT", "").rstrip("/")
+        self.deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4o")
+        self.api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-08-01-preview")
+
+        if not self.api_key:
+            raise ValueError("AZURE_OPENAI_API_KEY is not set in .env")
+        if not self.endpoint:
+            raise ValueError("AZURE_OPENAI_ENDPOINT is not set in .env")
+
+        self._client = AzureOpenAI(
+            api_key=self.api_key,
+            azure_endpoint=self.endpoint,
+            api_version=self.api_version,
+        )
+        self._model = self.deployment
+
+    def call(self, system_prompt: str, user_message: str) -> str:
+        response = self._client.chat.completions.create(
+            model=self._model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message},
+            ],
+            temperature=0.1,
+            max_tokens=4096,
+        )
+        return response.choices[0].message.content
+
+
+class GeminiProvider(AIProvider):
+    """Google Gemini using the google-genai SDK."""
+
+    def __init__(self):
+        from google import genai
+
+        self.api_key = os.getenv("GEMINI_API_KEY", "")
+        self.model_name = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+
+        if not self.api_key:
+            raise ValueError("GEMINI_API_KEY is not set in .env")
+
+        self._client = genai.Client(api_key=self.api_key)
+        self._model = self.model_name
+
+    def call(self, system_prompt: str, user_message: str) -> str:
+        from google.genai import types
+
+        response = self._client.models.generate_content(
+            model=self._model,
+            contents=user_message,
+            config=types.GenerateContentConfig(
+                system_instruction=system_prompt,
+                temperature=0.1,
+                max_output_tokens=4096,
+            ),
+        )
+        return response.text
+
+
+# ─── AI Service (uses configured provider) ───────────────────────
+
+class AIService:
+    def __init__(self):
+        provider_name = os.getenv("AI_PROVIDER", "azure_openai").lower()
+
+        if provider_name == "azure_openai":
+            self.provider = AzureOpenAIProvider()
+            self.provider_display = "Azure OpenAI"
+        elif provider_name == "gemini":
+            self.provider = GeminiProvider()
+            self.provider_display = "Gemini"
+        else:
+            raise ValueError(
+                f"Unknown AI_PROVIDER: '{provider_name}'. "
+                f"Use 'azure_openai' or 'gemini'"
+            )
+
+        print(f"[AI Service] Using provider: {self.provider_display}")
+
+    def _clean_response(self, content: str) -> str:
+        """Strip markdown fences from AI response."""
+        content = content.strip()
+        if content.startswith("```json"):
+            content = content[7:]
+        if content.startswith("```"):
+            content = content[3:]
+        if content.endswith("```"):
+            content = content[:-3]
+        return content.strip()
+
+    async def break_into_steps(self, nlp_input: str, start_url: str) -> list[dict]:
+        """Break NLP test description into sequential steps."""
+        user_msg = f'Test description: "{nlp_input}"\nStarting URL: {start_url}\n\nBreak this into precise sequential browser actions.'
+
+        result = self._clean_response(self.provider.call(STEP_BREAKDOWN_PROMPT, user_msg))
+        try:
+            return json.loads(result)
+        except json.JSONDecodeError:
+            match = re.search(r"\[.*\]", result, re.DOTALL)
+            if match:
+                return json.loads(match.group())
+            raise ValueError(f"Failed to parse AI response: {result[:300]}")
+
+    async def pick_element(self, snapshot_content: str, step: dict) -> dict:
+        """Pick the correct element ref from a snapshot for a given step."""
+        user_msg = f"STEP: {json.dumps(step)}\n\nPAGE SNAPSHOT:\n{snapshot_content}"
+
+        result = self._clean_response(self.provider.call(PICK_ELEMENT_PROMPT, user_msg))
+        try:
+            return json.loads(result)
+        except json.JSONDecodeError:
+            return {"ref": None, "confidence": "low", "reasoning": "Failed to parse response"}
+
+    async def generate_assertion(self, snapshot_content: str, step: dict) -> dict:
+        """Generate RF Browser assertion for a verification step."""
+        user_msg = f"ASSERTION STEP: {json.dumps(step)}\n\nPAGE SNAPSHOT:\n{snapshot_content}"
+
+        result = self._clean_response(self.provider.call(ASSERTION_PROMPT, user_msg))
+        try:
+            return json.loads(result)
+        except json.JSONDecodeError:
+            return {
+                "rf_keyword": "Log",
+                "full_line": f'    Log    Assertion could not be generated for: {step.get("description", "unknown")}',
+            }
+            
