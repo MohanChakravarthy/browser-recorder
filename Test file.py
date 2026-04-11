@@ -1,824 +1,128 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NLP Test Generator</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        html, body, #root { height: 100%; width: 100%; overflow: hidden; }
-        body { background: #0a0e1a; color: #e2e8f0; }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        @keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.5 } }
-        @keyframes fadeIn { from { opacity:0; transform:translateY(4px) } to { opacity:1; transform:translateY(0) } }
-        @keyframes glow { 0%,100% { box-shadow: 0 0 4px #3b82f620 } 50% { box-shadow: 0 0 12px #3b82f640 } }
-        ::-webkit-scrollbar { width:5px }
-        ::-webkit-scrollbar-track { background:#0a0e1a }
-        ::-webkit-scrollbar-thumb { background:#1e293b; border-radius:3px }
-        ::-webkit-scrollbar-thumb:hover { background:#334155 }
-        input:focus, textarea:focus { border-color:#3b82f6 !important; outline:none }
-        button:hover { filter:brightness(1.1) }
-        button:active { transform:scale(0.98) }
-    </style>
-    <!-- Monaco Editor Loader -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs/loader.min.js"></script>
-</head>
-<body>
-    <div id="root"></div>
-
-    <script type="text/babel">
-        const { useState, useRef, useEffect, useCallback } = React;
-
-        const WS_BASE = `ws://${window.location.hostname}:${window.location.port || '8000'}`;
-        const ICONS = { pending:"○", running:"◉", success:"✓", failed:"✗", skipped:"⊘" };
-        const COLORS = { pending:"#4b5563", running:"#f59e0b", success:"#22c55e", failed:"#ef4444", skipped:"#6b7280" };
-
-        // ─── Monaco Editor Component ─────────────────────
-        function MonacoEditor({ value, language = "robot" }) {
-            const containerRef = useRef(null);
-            const editorRef = useRef(null);
-            const monacoReadyRef = useRef(false);
-
-            useEffect(() => {
-                if (!containerRef.current) return;
-
-                require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs' }});
-
-                require(['vs/editor/editor.main'], function(monaco) {
-                    // Register Robot Framework language
-                    if (!monacoReadyRef.current) {
-                        monaco.languages.register({ id: 'robot' });
-                        monaco.languages.setMonarchTokensProvider('robot', {
-                            tokenizer: {
-                                root: [
-                                    [/^\*\*\*.*\*\*\*/, 'keyword.section'],
-                                    [/\$\{[^}]+\}/, 'variable'],
-                                    [/\[Documentation\]|\[Setup\]|\[Teardown\]|\[Tags\]|\[Template\]/, 'keyword.tag'],
-                                    [/#.*$/, 'comment'],
-                                    [/Library|Resource|Variables|Suite Setup|Suite Teardown|Test Setup|Test Teardown/, 'keyword.setting'],
-                                    [/New Browser|New Page|Close Browser|Click|Fill Text|Get Text|Get Url|Get Element States|Get Element Count|Get Title|Wait For Elements State|Check Checkbox|Uncheck Checkbox|Select Options By|Hover|Keyboard Key|Type Text|Upload File By Selector|Go To|Go Back|Go Forward|Reload|Sleep|Wait For Load State|Log|Take Screenshot/, 'support.function'],
-                                    [/==|!=|\*=|contains|visible|enabled|disabled|checked|hidden/, 'operator'],
-                                    [/headless=true|headless=false|chromium|firefox|webkit/, 'constant'],
-                                    [/"[^"]*"/, 'string'],
-                                    [/'[^']*'/, 'string'],
-                                    [/\b(true|false|True|False|None)\b/, 'constant'],
-                                    [/# FAILED:.*$/, 'invalid'],
-                                    [/# WARNING:.*$/, 'keyword.warning'],
-                                    [/# MANUAL REVIEW:.*$/, 'keyword.warning'],
-                                ],
-                            },
-                        });
-
-                        monaco.editor.defineTheme('nlp-dark', {
-                            base: 'vs-dark',
-                            inherit: true,
-                            rules: [
-                                { token: 'keyword.section', foreground: '60a5fa', fontStyle: 'bold' },
-                                { token: 'variable', foreground: 'c084fc' },
-                                { token: 'keyword.tag', foreground: 'f472b6' },
-                                { token: 'keyword.setting', foreground: '60a5fa' },
-                                { token: 'support.function', foreground: '34d399' },
-                                { token: 'comment', foreground: '4b5563', fontStyle: 'italic' },
-                                { token: 'string', foreground: 'fbbf24' },
-                                { token: 'operator', foreground: 'fb923c' },
-                                { token: 'constant', foreground: 'f472b6' },
-                                { token: 'invalid', foreground: 'fca5a5', fontStyle: 'italic' },
-                                { token: 'keyword.warning', foreground: 'fbbf24', fontStyle: 'italic' },
-                            ],
-                            colors: {
-                                'editor.background': '#080c16',
-                                'editor.foreground': '#e2e8f0',
-                                'editor.lineHighlightBackground': '#1e293b40',
-                                'editorLineNumber.foreground': '#334155',
-                                'editorLineNumber.activeForeground': '#64748b',
-                                'editor.selectionBackground': '#3b82f640',
-                                'editorCursor.foreground': '#3b82f6',
-                                'editorGutter.background': '#080c16',
-                                'scrollbarSlider.background': '#1e293b80',
-                                'scrollbarSlider.hoverBackground': '#334155',
-                            },
-                        });
-                        monacoReadyRef.current = true;
-                    }
-
-                    if (editorRef.current) {
-                        editorRef.current.dispose();
-                    }
-
-                    editorRef.current = monaco.editor.create(containerRef.current, {
-                        value: value || '',
-                        language: 'robot',
-                        theme: 'nlp-dark',
-                        readOnly: true,
-                        minimap: { enabled: false },
-                        fontSize: 13,
-                        fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
-                        fontLigatures: true,
-                        lineNumbers: 'on',
-                        scrollBeyondLastLine: false,
-                        renderLineHighlight: 'line',
-                        automaticLayout: true,
-                        padding: { top: 12, bottom: 12 },
-                        scrollbar: {
-                            vertical: 'auto',
-                            horizontal: 'auto',
-                            verticalScrollbarSize: 6,
-                            horizontalScrollbarSize: 6,
-                        },
-                        overviewRulerBorder: false,
-                        hideCursorInOverviewRuler: true,
-                        contextmenu: false,
-                        wordWrap: 'on',
-                    });
-                });
-
-                return () => {
-                    if (editorRef.current) {
-                        editorRef.current.dispose();
-                        editorRef.current = null;
-                    }
-                };
-            }, []);
-
-            // Update content when value changes
-            useEffect(() => {
-                if (editorRef.current && value !== undefined) {
-                    const model = editorRef.current.getModel();
-                    if (model && model.getValue() !== value) {
-                        model.setValue(value);
-                        // Auto-scroll to bottom
-                        const lineCount = model.getLineCount();
-                        editorRef.current.revealLine(lineCount);
-                    }
-                }
-            }, [value]);
-
-            return <div ref={containerRef} style={{ width:'100%', height:'100%' }} />;
-        }
-
-        // ─── Main App ────────────────────────────────────
-        function App() {
-            const [connected, setConnected] = useState(false);
-            const wsRef = useRef(null);
-
-            const [nlpInput, setNlpInput] = useState("");
-            const [startUrl, setStartUrl] = useState("");
-            const [username, setUsername] = useState("");
-            const [password, setPassword] = useState("");
-            const [showCreds, setShowCreds] = useState(false);
-
-            const [isRunning, setIsRunning] = useState(false);
-            const [isPaused, setIsPaused] = useState(false);
-            const [steps, setSteps] = useState([]);
-            const [stepStatuses, setStepStatuses] = useState([]);
-            const [currentStep, setCurrentStep] = useState(-1);
-            const [statusMsg, setStatusMsg] = useState("");
-
-            const [screenshot, setScreenshot] = useState(null);
-            const [rfLines, setRfLines] = useState([]);
-            const [finalScript, setFinalScript] = useState("");
-            const [liveScript, setLiveScript] = useState("");
-            const [result, setResult] = useState(null);
-            const [copyLabel, setCopyLabel] = useState("Copy");
-
-            // Build live preview script as lines come in
-            useEffect(() => {
-                if (finalScript) return; // use final script when available
-                if (rfLines.length === 0) return;
-                const preview = [
-                    "*** Settings ***",
-                    "Library    Browser",
-                    "",
-                    "*** Variables ***",
-                    "${BASE_URL}    " + (startUrl || "https://..."),
-                    username ? "${USERNAME}    SET_AT_RUNTIME" : null,
-                    password ? "${PASSWORD}    SET_AT_RUNTIME" : null,
-                    "",
-                    "*** Test Cases ***",
-                    "NLP Generated Test",
-                    "    [Documentation]    " + nlpInput.slice(0, 80),
-                    "    New Browser    chromium    headless=true",
-                    "    New Page    ${BASE_URL}",
-                    "",
-                    ...rfLines,
-                    "",
-                    "    [Teardown]    Close Browser",
-                ].filter(l => l !== null).join("\n");
-                setLiveScript(preview);
-            }, [rfLines, finalScript, startUrl, nlpInput, username, password]);
-
-            // ── WebSocket ────────────────────────────
-            const connect = useCallback(() => {
-                if (wsRef.current?.readyState === WebSocket.OPEN) return;
-                const ws = new WebSocket(`${WS_BASE}/nlp-test/ws`);
-                wsRef.current = ws;
-                ws.onopen = () => setConnected(true);
-                ws.onclose = () => { setConnected(false); setIsRunning(false); };
-                ws.onerror = () => setConnected(false);
-                ws.onmessage = (e) => handleMsg(JSON.parse(e.data));
-            }, []);
-
-            const send = useCallback((msg) => {
-                if (wsRef.current?.readyState === WebSocket.OPEN)
-                    wsRef.current.send(JSON.stringify(msg));
-            }, []);
-
-            const handleMsg = useCallback((d) => {
-                switch (d.type) {
-                    case "connected": break;
-                    case "status": setStatusMsg(d.message); break;
-                    case "steps_planned":
-                        setSteps(d.steps);
-                        setStepStatuses(d.steps.map(() => "pending"));
-                        break;
-                    case "step_start":
-                        setCurrentStep(d.index);
-                        setStepStatuses(p => { const n=[...p]; if(d.index>=0) n[d.index]="running"; return n; });
-                        setStatusMsg(`Step ${d.index+1}: ${d.description}`);
-                        break;
-                    case "step_complete":
-                        if (d.screenshot_b64) setScreenshot(d.screenshot_b64);
-                        if (d.rf_line) setRfLines(p => [...p, d.rf_line]);
-                        setStepStatuses(p => { const n=[...p]; if(d.index>=0) n[d.index]=d.status==="skipped"?"skipped":"success"; return n; });
-                        break;
-                    case "step_failed":
-                        if (d.screenshot_b64) setScreenshot(d.screenshot_b64);
-                        setStepStatuses(p => { const n=[...p]; if(d.index>=0) n[d.index]="failed"; return n; });
-                        setStatusMsg(`Step ${d.index+1} failed: ${d.error}`);
-                        break;
-                    case "rf_script_complete":
-                        setFinalScript(d.script);
-                        setStatusMsg("✓ Test script generated!");
-                        break;
-                    case "execution_complete":
-                        setIsRunning(false); setResult(d);
-                        break;
-                    case "error":
-                        setStatusMsg(`Error: ${d.message}`); setIsRunning(false);
-                        break;
-                }
-            }, []);
-
-            useEffect(() => { connect(); return () => wsRef.current?.close(); }, [connect]);
-
-            const handleStart = () => {
-                if (!nlpInput.trim() || !startUrl.trim()) return;
-                setSteps([]); setStepStatuses([]); setCurrentStep(-1);
-                setRfLines([]); setFinalScript(""); setLiveScript(""); setScreenshot(null);
-                setResult(null); setIsRunning(true); setIsPaused(false);
-                send({
-                    type: "start",
-                    nlp_input: nlpInput.trim(),
-                    start_url: startUrl.trim(),
-                    username: username.trim(),
-                    password: password.trim(),
-                });
-            };
-
-            const handlePause = () => { send({ type: isPaused ? "resume" : "pause" }); setIsPaused(!isPaused); };
-            const handleStop = () => { send({ type: "stop" }); setIsRunning(false); setIsPaused(false); };
-            const handleRetry = (i) => { send({ type: "retry_step", step_index: i }); setStepStatuses(p => { const n=[...p]; n[i]="running"; return n; }); };
-
-            const handleCopy = () => {
-                navigator.clipboard.writeText(finalScript || liveScript);
-                setCopyLabel("✓ Copied"); setTimeout(() => setCopyLabel("Copy"), 2000);
-            };
-
-            const handleDownload = () => {
-                const blob = new Blob([finalScript || liveScript], { type: "text/plain" });
-                const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
-                a.download = `test_${Date.now()}.robot`; a.click();
-            };
-
-            const canStart = nlpInput.trim() && startUrl.trim() && connected && !isRunning;
-            const displayScript = finalScript || liveScript;
-
-            return (
-                <div style={S.container}>
-                    {/* ── Header ──────────────────── */}
-                    <div style={S.header}>
-                        <div style={S.headerLeft}>
-                            <div style={S.logo}>⚡</div>
-                            <h1 style={S.title}>NLP Test Generator</h1>
-                            <div style={{...S.dot, background: connected ? '#22c55e' : '#ef4444'}} />
-                        </div>
-                        <div style={S.headerRight}>
-                            {result && <>
-                                <span style={{...S.pill, background:'#052e16', color:'#4ade80'}}>{result.passed} passed</span>
-                                {result.failed > 0 && <span style={{...S.pill, background:'#2a0a0a', color:'#fca5a5'}}>{result.failed} failed</span>}
-                            </>}
-                        </div>
-                    </div>
-
-                    {/* ── Input Section ────────────── */}
-                    <div style={S.inputWrap}>
-                        {/* Row 1: URL + Credentials toggle */}
-                        <div style={S.row}>
-                            <div style={{flex:1}}>
-                                <label style={S.label}>Target URL</label>
-                                <input style={S.input} placeholder="https://your-app.com" value={startUrl}
-                                    onChange={e=>setStartUrl(e.target.value)} disabled={isRunning} />
-                            </div>
-                            <button style={{...S.credToggle, color: showCreds ? '#3b82f6' : '#64748b'}}
-                                onClick={() => setShowCreds(!showCreds)} type="button">
-                                🔑 {showCreds ? 'Hide' : 'Credentials'}
-                            </button>
-                        </div>
-
-                        {/* Credentials (collapsible) */}
-                        {showCreds && (
-                            <div style={{...S.row, animation:'fadeIn 0.2s ease'}}>
-                                <div style={{flex:1}}>
-                                    <label style={S.label}>Username / Email</label>
-                                    <input style={S.input} placeholder="admin@example.com" value={username}
-                                        onChange={e=>setUsername(e.target.value)} disabled={isRunning}
-                                        autoComplete="off" />
-                                </div>
-                                <div style={{flex:1}}>
-                                    <label style={S.label}>Password</label>
-                                    <input style={S.input} type="password" placeholder="••••••••" value={password}
-                                        onChange={e=>setPassword(e.target.value)} disabled={isRunning}
-                                        autoComplete="new-password" />
-                                </div>
-                                <div style={S.credNote}>
-                                    🔒 Never sent to AI
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Row 2: NLP + Controls */}
-                        <div style={S.row}>
-                            <div style={{flex:1}}>
-                                <label style={S.label}>Test Description</label>
-                                <input style={S.input}
-                                    placeholder='e.g. "Login with credentials, navigate to orders, create a new order with quantity 5"'
-                                    value={nlpInput} onChange={e=>setNlpInput(e.target.value)} disabled={isRunning}
-                                    onKeyDown={e => e.key==="Enter" && canStart && handleStart()} />
-                            </div>
-                            <div style={S.btns}>
-                                {!isRunning ? (
-                                    <button style={{...S.btn,...S.btnGo, opacity:canStart?1:0.4}} onClick={handleStart} disabled={!canStart}>
-                                        ▶ Generate
-                                    </button>
-                                ) : (<>
-                                    <button style={{...S.btn,...S.btnWarn}} onClick={handlePause}>
-                                        {isPaused ? "▶" : "⏸"}
-                                    </button>
-                                    <button style={{...S.btn,...S.btnDanger}} onClick={handleStop}>■</button>
-                                </>)}
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* ── Main Split ───────────────── */}
-                    <div style={S.split}>
-                        {/* Left 60% */}
-                        <div style={S.left}>
-                            <div style={S.ssWrap}>
-                                {screenshot ? (
-                                    <img src={`data:image/png;base64,${screenshot}`} alt="Browser" style={S.ssImg} />
-                                ) : (
-                                    <div style={S.placeholder}>
-                                        <div style={{fontSize:44,opacity:0.15}}>🌐</div>
-                                        <div style={S.phText}>Browser preview appears here</div>
-                                    </div>
-                                )}
-                            </div>
-
-                            {statusMsg && (
-                                <div style={S.status}>
-                                    {isRunning && <span style={S.spinner}/>}
-                                    <span>{statusMsg}</span>
-                                </div>
-                            )}
-
-                            {steps.length > 0 && (
-                                <div style={S.stepsWrap}>
-                                    <div style={S.stepsHead}>
-                                        Steps {stepStatuses.filter(s=>s==="success"||s==="skipped").length}/{steps.length}
-                                    </div>
-                                    <div style={S.stepsList}>
-                                        {steps.map((step, i) => (
-                                            <div key={i} style={{
-                                                ...S.stepRow,
-                                                borderLeftColor: COLORS[stepStatuses[i]]||COLORS.pending,
-                                                background: currentStep===i ? '#111827' : 'transparent',
-                                                animation: stepStatuses[i]==="running" ? "pulse 1.5s infinite" : "none",
-                                            }}>
-                                                <span style={{...S.stepIcon, color:COLORS[stepStatuses[i]]}}>{ICONS[stepStatuses[i]]||ICONS.pending}</span>
-                                                <span style={S.stepAction}>{step.action}</span>
-                                                <span style={S.stepDesc}>{step.description}</span>
-                                                {stepStatuses[i]==="failed" && (
-                                                    <button style={S.retryBtn} onClick={()=>handleRetry(i)}>↻</button>
-                                                )}
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-
-                        <div style={S.divider}/>
-
-                        {/* Right 40% — Monaco Editor */}
-                        <div style={S.right}>
-                            <div style={S.codeHead}>
-                                <span style={S.codeTitle}>
-                                    {finalScript ? '✓ Generated .robot' : rfLines.length > 0 ? 'Building...' : 'RF Browser Code'}
-                                </span>
-                                <div style={{display:'flex',gap:4}}>
-                                    {displayScript && <>
-                                        <button style={S.codeBtn} onClick={handleCopy}>{copyLabel}</button>
-                                        <button style={S.codeBtn} onClick={handleDownload}>↓ .robot</button>
-                                    </>}
-                                </div>
-                            </div>
-                            <div style={S.monacoWrap}>
-                                {displayScript ? (
-                                    <MonacoEditor value={displayScript} />
-                                ) : (
-                                    <div style={S.placeholder}>
-                                        <div style={{fontFamily:"'JetBrains Mono'",fontSize:28,opacity:0.1}}>{ "{  }" }</div>
-                                        <div style={S.phText}>Robot Framework code builds here live</div>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            );
-        }
-
-        // ─── Styles ──────────────────────────────────────
-        const S = {
-            container: { width:'100%', height:'100vh', display:'flex', flexDirection:'column', background:'#0a0e1a', fontFamily:"'Inter','Segoe UI',sans-serif", overflow:'hidden' },
-
-            header: { display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 16px', borderBottom:'1px solid #151b2e', flexShrink:0, background:'#0d1220' },
-            headerLeft: { display:'flex', alignItems:'center', gap:10 },
-            headerRight: { display:'flex', gap:6 },
-            logo: { fontSize:16, width:28, height:28, display:'flex', alignItems:'center', justifyContent:'center', background:'linear-gradient(135deg,#3b82f6,#8b5cf6)', borderRadius:7, fontWeight:700 },
-            title: { fontSize:14, fontWeight:700, color:'#f1f5f9', letterSpacing:'-0.02em', fontFamily:"'JetBrains Mono',monospace" },
-            dot: { width:7, height:7, borderRadius:'50%' },
-            pill: { fontSize:11, padding:'2px 10px', borderRadius:99, fontWeight:600, fontFamily:"'JetBrains Mono',monospace" },
-
-            inputWrap: { padding:'10px 16px', borderBottom:'1px solid #151b2e', flexShrink:0, display:'flex', flexDirection:'column', gap:8, background:'#0d1220' },
-            row: { display:'flex', gap:10, alignItems:'flex-end' },
-            label: { display:'block', fontSize:10, color:'#4b5563', marginBottom:3, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em' },
-            input: { width:'100%', padding:'7px 10px', fontSize:13, background:'#111827', border:'1px solid #1e293b', borderRadius:5, color:'#e2e8f0', fontFamily:"'Inter',sans-serif", transition:'border-color 0.15s' },
-
-            credToggle: { background:'none', border:'1px solid #1e293b', borderRadius:5, padding:'7px 12px', fontSize:12, cursor:'pointer', fontFamily:"'Inter',sans-serif", whiteSpace:'nowrap', flexShrink:0, transition:'all 0.15s' },
-            credNote: { fontSize:10, color:'#22c55e', whiteSpace:'nowrap', padding:'0 0 6px 0', flexShrink:0, fontWeight:600 },
-
-            btns: { display:'flex', gap:4, flexShrink:0 },
-            btn: { padding:'7px 16px', fontSize:13, fontWeight:600, border:'none', borderRadius:5, cursor:'pointer', fontFamily:"'JetBrains Mono',monospace", whiteSpace:'nowrap', transition:'all 0.12s' },
-            btnGo: { background:'linear-gradient(135deg,#3b82f6,#2563eb)', color:'#fff', minWidth:110 },
-            btnWarn: { background:'#f59e0b', color:'#000', minWidth:36 },
-            btnDanger: { background:'#ef4444', color:'#fff', minWidth:36 },
-
-            split: { flex:1, display:'flex', overflow:'hidden', minHeight:0 },
-            divider: { width:1, background:'#151b2e', flexShrink:0 },
-
-            left: { flex:'0 0 58%', display:'flex', flexDirection:'column', overflow:'hidden' },
-            ssWrap: { flex:'0 0 42%', padding:10, display:'flex', alignItems:'center', justifyContent:'center', background:'#070a14', borderBottom:'1px solid #151b2e', overflow:'hidden' },
-            ssImg: { maxWidth:'100%', maxHeight:'100%', objectFit:'contain', borderRadius:4, border:'1px solid #1e293b' },
-            placeholder: { textAlign:'center', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'100%', gap:6 },
-            phText: { fontSize:12, color:'#374151', fontFamily:"'Inter',sans-serif" },
-
-            status: { padding:'6px 14px', fontSize:11, color:'#94a3b8', background:'#111827', borderBottom:'1px solid #1e293b', display:'flex', alignItems:'center', gap:7, flexShrink:0, fontFamily:"'JetBrains Mono',monospace" },
-            spinner: { display:'inline-block', width:10, height:10, border:'2px solid #1e293b', borderTopColor:'#3b82f6', borderRadius:'50%', animation:'spin 0.7s linear infinite', flexShrink:0 },
-
-            stepsWrap: { flex:1, display:'flex', flexDirection:'column', overflow:'hidden' },
-            stepsHead: { padding:'6px 14px', fontSize:10, fontWeight:700, color:'#4b5563', textTransform:'uppercase', letterSpacing:'0.06em', borderBottom:'1px solid #151b2e', flexShrink:0, fontFamily:"'JetBrains Mono',monospace" },
-            stepsList: { flex:1, overflowY:'auto', padding:'2px 0' },
-            stepRow: { display:'flex', alignItems:'center', gap:8, padding:'4px 14px', borderLeft:'3px solid transparent', transition:'background 0.12s' },
-            stepIcon: { fontSize:12, fontWeight:700, width:14, textAlign:'center', flexShrink:0, fontFamily:"'JetBrains Mono',monospace" },
-            stepAction: { fontSize:9, fontWeight:700, color:'#3b82f6', textTransform:'uppercase', flexShrink:0, letterSpacing:'0.04em', fontFamily:"'JetBrains Mono',monospace", minWidth:55 },
-            stepDesc: { fontSize:11.5, color:'#cbd5e1', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', flex:1, minWidth:0 },
-            retryBtn: { background:'none', border:'1px solid #374151', color:'#f59e0b', fontSize:13, cursor:'pointer', borderRadius:3, padding:'1px 6px', flexShrink:0 },
-
-            right: { flex:'0 0 42%', display:'flex', flexDirection:'column', overflow:'hidden' },
-            codeHead: { display:'flex', alignItems:'center', justifyContent:'space-between', padding:'6px 14px', borderBottom:'1px solid #151b2e', flexShrink:0, background:'#0d1220' },
-            codeTitle: { fontSize:10, fontWeight:700, color:'#4b5563', textTransform:'uppercase', letterSpacing:'0.06em', fontFamily:"'JetBrains Mono',monospace" },
-            codeBtn: { background:'#111827', border:'1px solid #1e293b', color:'#94a3b8', fontSize:10, padding:'3px 8px', borderRadius:3, cursor:'pointer', fontFamily:"'JetBrains Mono',monospace", transition:'all 0.12s' },
-            monacoWrap: { flex:1, overflow:'hidden', background:'#080c16' },
-        };
-
-        ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
-    </script>
-</body>
-</html>
-
-
-
-_____&&&_______
-
-"""
-NLP Test Generator — Standalone FastAPI Server
-Run: python app.py
-"""
-
-import asyncio
-import base64
-import concurrent.futures
-import glob
-import json
-import os
-import re
-import subprocess
-import tempfile
-import traceback
-import uuid
-from datetime import datetime
-from pathlib import Path
-from typing import Optional
-
-from dotenv import load_dotenv
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse
-
-from ai_service import AIService
-from playwright_parser import assemble_robot_file, playwright_to_rf
-
-load_dotenv()
-
-app = FastAPI(title="NLP Test Generator", version="1.0.0")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-PLAYWRIGHT_CLI = os.getenv("PLAYWRIGHT_CLI_PATH", "playwright-cli")
-WORKSPACE_DIR = Path(os.getenv("NLP_WORKSPACE", os.path.join(tempfile.gettempdir(), "nlp-test-workspaces")))
-GENERATED_TESTS_DIR = Path("./generated_tests")
-WORKSPACE_DIR.mkdir(parents=True, exist_ok=True)
-GENERATED_TESTS_DIR.mkdir(parents=True, exist_ok=True)
-
-ai_service = AIService()
-_executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
-
-# Speed: actions that skip screenshot (non-visual changes)
-SKIP_SCREENSHOT_ACTIONS = {"fill", "check", "uncheck", "hover", "press_key", "wait"}
-
-# Speed: actions that trigger page changes (need extra wait)
-PAGE_CHANGE_WORDS = ["submit", "save", "create", "delete", "send", "login", "sign", "confirm", "add", "remove", "update", "navigate", "go to"]
-
-
-# ─── Credential Manager ──────────────────────────────────────────
-
-class CredentialManager:
-    """
-    Ensures credentials NEVER reach the AI.
-    - Replaces real values with ${VAR} before sending to AI
-    - Injects real values only at playwright-cli execution
-    - RF script uses ${VAR} references
-    """
-
-    def __init__(self, username: str = "", password: str = "", start_url: str = ""):
-        self.mappings = {}
-        if username:
-            self.mappings["${USERNAME}"] = username
-        if password:
-            self.mappings["${PASSWORD}"] = password
-        if start_url:
-            self.mappings["${BASE_URL}"] = start_url
-
-    def mask(self, text: str) -> str:
-        """Replace real values with placeholders (for AI)."""
-        result = text
-        for var, real in self.mappings.items():
-            if real and real in result:
-                result = result.replace(real, var)
-        return result
-
-    def unmask(self, text: str) -> str:
-        """Replace placeholders with real values (for playwright-cli)."""
-        result = text
-        for var, real in self.mappings.items():
-            if var in result:
-                result = result.replace(var, real)
-        return result
-
-    def mask_step(self, step: dict) -> dict:
-        """Return a copy of step with values masked."""
-        masked = dict(step)
-        if "value" in masked and masked["value"]:
-            masked["value"] = self.mask(str(masked["value"]))
-        if "target" in masked and masked["target"]:
-            masked["target"] = self.mask(str(masked["target"]))
-        if "expected" in masked and masked["expected"]:
-            masked["expected"] = self.mask(str(masked["expected"]))
-        return masked
-
-    def get_rf_variables(self) -> dict:
-        """Return variable dict for RF file header (values masked)."""
-        variables = {}
-        if "${USERNAME}" in self.mappings:
-            variables["USERNAME"] = "SET_AT_RUNTIME"
-        if "${PASSWORD}" in self.mappings:
-            variables["PASSWORD"] = "SET_AT_RUNTIME"
-        return variables
-
-
-# ─── Subprocess Helper ────────────────────────────────────────────
-
-async def run_cli(command: str, session: str = "default", cwd: str = "", timeout: float = 30.0) -> dict:
-    """Execute playwright-cli command (Windows compatible via thread pool)."""
-    full_cmd = f"{PLAYWRIGHT_CLI} -s={session} {command}"
-    work_dir = cwd or str(WORKSPACE_DIR)
-
-    print(f"  [CLI] {full_cmd}")
-
-    def _run():
-        try:
-            result = subprocess.run(
-                full_cmd, shell=True, capture_output=True,
-                cwd=work_dir, timeout=timeout,
-                encoding="utf-8", errors="replace",
-            )
-            return result.stdout, result.stderr, result.returncode
-        except subprocess.TimeoutExpired:
-            return "", "Command timed out", -1
-        except Exception as e:
-            return "", str(e), -1
-
-    loop = asyncio.get_event_loop()
-    stdout_str, stderr_str, returncode = await loop.run_in_executor(_executor, _run)
-
-    print(f"  [CLI stdout] {stdout_str[:500]}")
-    if stderr_str.strip():
-        print(f"  [CLI stderr] {stderr_str[:200]}")
-    print(f"  [CLI return] {returncode}")
-
-    snapshot_file = None
-    for line in stdout_str.split("\n"):
-        match = re.search(r"(\.playwright-cli[/\\][^\s\)\]]+\.yml)", line)
-        if match:
-            snapshot_file = os.path.join(work_dir, match.group(1))
-
-    screenshot_file = None
-    for line in stdout_str.split("\n"):
-        match = re.search(r"(\.playwright-cli[/\\][^\s\)\]]+\.png)", line)
-        if match:
-            screenshot_file = os.path.join(work_dir, match.group(1))
-
+e_astail}")
+            await self.send({"type": "error", "message": self.creds.mask(str(e)) or error_detail[-500:]})
+
+
+# ─── WebSocket Endpoint ──────────────────────────────────────────
+
+@app.websocket("/nlp-test/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+
+    session_id = str(uuid.uuid4())[:8]
+    orchestrator: Optional[Orchestrator] = None
+    task: Optional[asyncio.Task] = None
+
+    await websocket.send_json({"type": "connected", "session_id": session_id})
+    print(f"\n[WS] Client connected: {session_id}")
+
+    try:
+        while True:
+            data = await websocket.receive_json()
+            msg_type = data.get("type")
+
+            if msg_type == "start":
+                nlp_input = data.get("nlp_input", "").strip()
+                start_url = data.get("start_url", "").strip()
+                username = data.get("username", "").strip()
+                password = data.get("password", "").strip()
+
+                if not nlp_input or not start_url:
+                    await websocket.send_json({"type": "error", "message": "URL and test description are required."})
+                    continue
+
+                print(f"\n[Start] URL: {start_url}")
+                print(f"[Start] NLP: {nlp_input}")
+                if username:
+                    print(f"[Start] Credentials: provided (masked)")
+
+                creds = CredentialManager(username, password, start_url)
+                orchestrator = Orchestrator(session_id, websocket, creds)
+                task = asyncio.create_task(orchestrator.run(nlp_input, start_url))
+
+            elif msg_type == "pause" and orchestrator:
+                orchestrator.paused = True
+                await websocket.send_json({"type": "status", "message": "Paused."})
+
+            elif msg_type == "resume" and orchestrator:
+                orchestrator.paused = False
+                await websocket.send_json({"type": "status", "message": "Resumed."})
+
+            elif msg_type == "stop" and orchestrator:
+                orchestrator.stopped = True
+                if task:
+                    task.cancel()
+                await websocket.send_json({"type": "status", "message": "Stopped."})
+
+            elif msg_type == "retry_step" and orchestrator and orchestrator.steps:
+                idx = data.get("step_index", 0)
+                if 0 <= idx < len(orchestrator.steps):
+                    step_result = await orchestrator.execute_step(orchestrator.steps[idx], idx)
+                    msg_key = "step_complete" if step_result["status"] == "success" else "step_failed"
+                    await websocket.send_json({"type": msg_key, "index": idx, **step_result})
+
+    except WebSocketDisconnect:
+        print(f"[WS] Client disconnected: {session_id}")
+        if orchestrator:
+            orchestrator.stopped = True
+            await run_cli("close", session_id, str(WORKSPACE_DIR / session_id))
+    except Exception as e:
+        print(f"[WS Error] {traceback.format_exc()}")
+
+
+# ─── REST Endpoints ───────────────────────────────────────────────
+
+@app.get("/api/generated-tests")
+async def list_tests():
+    files = sorted(GENERATED_TESTS_DIR.glob("*.robot"), key=os.path.getmtime, reverse=True)
+    return [
+        {"filename": f.name, "created": datetime.fromtimestamp(f.stat().st_mtime).isoformat(), "size_bytes": f.stat().st_size}
+        for f in files
+    ]
+
+@app.get("/api/generated-tests/{filename}")
+async def download_test(filename: str):
+    filepath = GENERATED_TESTS_DIR / filename
+    if not filepath.exists():
+        return {"error": "File not found"}
+    return FileResponse(filepath, filename=filename, media_type="text/plain")
+
+@app.get("/api/health")
+async def health():
+    cli_ok = False
+    cli_version = "not found"
+    try:
+        result = subprocess.run(
+            f"{PLAYWRIGHT_CLI} --version", shell=True,
+            capture_output=True, encoding="utf-8", timeout=10,
+        )
+        cli_ok = result.returncode == 0
+        cli_version = result.stdout.strip() if cli_ok else "not found"
+    except Exception:
+        pass
     return {
-        "stdout": stdout_str,
-        "stderr": stderr_str,
-        "returncode": returncode,
-        "snapshot_file": snapshot_file,
-        "screenshot_file": screenshot_file,
+        "status": "ok" if cli_ok else "degraded",
+        "playwright_cli": {"installed": cli_ok, "version": cli_version},
+        "ai_provider": ai_service.provider_display,
     }
 
+@app.get("/")
+async def serve_ui():
+    html_path = Path(__file__).parent / "index.html"
+    if html_path.exists():
+        return HTMLResponse(html_path.read_text(encoding="utf-8"))
+    return HTMLResponse("<h2>Place index.html in the same directory as app.py</h2>")
 
-def read_file_content(path: str) -> str:
-    try:
-        with open(path, "r", encoding="utf-8", errors="replace") as f:
-            return f.read()
-    except (FileNotFoundError, IOError):
-        return ""
-
-
-def find_latest_file(directory: str, pattern: str) -> Optional[str]:
-    files = sorted(glob.glob(os.path.join(directory, pattern)), key=os.path.getmtime, reverse=True)
-    return files[0] if files else None
-
-
-def file_to_base64(path: str) -> Optional[str]:
-    try:
-        with open(path, "rb") as f:
-            return base64.b64encode(f.read()).decode("utf-8")
-    except (FileNotFoundError, IOError):
-        return None
-
-
-def extract_playwright_code(stdout: str) -> Optional[str]:
-    for line in stdout.strip().split("\n"):
-        line = line.strip()
-        if line.startswith("await page.") or line.startswith("page."):
-            return line
-    return None
-
-
-# ─── Orchestrator ─────────────────────────────────────────────────
-
-class Orchestrator:
-    def __init__(self, session_id: str, ws: WebSocket, creds: CredentialManager):
-        self.session_id = session_id
-        self.ws = ws
-        self.creds = creds
-        self.workspace = str(WORKSPACE_DIR / session_id)
-        self.cli_dir = os.path.join(self.workspace, ".playwright-cli")
-        self.paused = False
-        self.stopped = False
-        self.rf_lines: list[str] = []
-        self.steps: list[dict] = []
-        self.last_snapshot_content: str = ""  # Speed: reuse snapshots
-        self.last_screenshot_b64: Optional[str] = None  # Speed: reuse screenshots
-
-        os.makedirs(self.workspace, exist_ok=True)
-
-    async def send(self, msg: dict):
-        try:
-            await self.ws.send_json(msg)
-        except Exception:
-            pass
-
-    async def wait_if_paused(self):
-        while self.paused and not self.stopped:
-            await asyncio.sleep(0.3)
-
-    async def screenshot(self) -> Optional[str]:
-        result = await run_cli("screenshot", self.session_id, self.workspace)
-        path = result.get("screenshot_file") or find_latest_file(self.cli_dir, "*.png")
-        b64 = file_to_base64(path) if path else None
-        if b64:
-            self.last_screenshot_b64 = b64
-        return b64
-
-    async def snapshot(self, force: bool = False) -> str:
-        """Take snapshot. If not forced and we have a recent one, reuse it."""
-        if not force and self.last_snapshot_content:
-            return self.last_snapshot_content
-
-        result = await run_cli("snapshot", self.session_id, self.workspace)
-        path = result.get("snapshot_file") or find_latest_file(self.cli_dir, "*.yml")
-        content = read_file_content(path) if path else ""
-        if content:
-            self.last_snapshot_content = content
-        return content
-
-    def invalidate_snapshot(self):
-        """Mark snapshot as stale after an action changes the page."""
-        self.last_snapshot_content = ""
-
-    async def execute_step(self, step: dict, index: int) -> dict:
-        action = step.get("action", "")
-        description = step.get("description", "")
-
-        await self.send({
-            "type": "step_start",
-            "index": index,
-            "description": description,
-            "action": action,
-        })
-
-        try:
-            # ── Navigate ──────────────────────────────
-            if action == "navigate":
-                target = step.get("target", "")
-                real_target = self.creds.unmask(target)
-                await run_cli(f"goto {real_target}", self.session_id, self.workspace)
-                await asyncio.sleep(1.0)
-                self.invalidate_snapshot()
-                pw_code = f"page.goto('{target}')"
-                rf_line = f"    Go To    {target}"
-
-            # ── Wait ──────────────────────────────────
-            elif action == "wait":
-                duration = step.get("value", "2")
-                await asyncio.sleep(float(duration))
-                self.invalidate_snapshot()
-                rf_line = f"    Sleep    {duration}s"
-                pw_code = f"page.waitForTimeout({int(float(duration) * 1000)})"
-
-            # ── Assertions ────────────────────────────
-            elif action.startswith("assert"):
-                snapshot_content = await self.snapshot(force=True)
-                # Mask snapshot before sending to AI
-                masked_snapshot = self.creds.mask(snapshot_content)
-                masked_step = self.creds.mask_step(step)
-                assertion = await ai_service.generate_assertion(masked_snapshot, masked_step)
-                rf_line = assertion.get("full_line", f"    # Assertion: {description}")
-                pw_code = f"// Assertion: {description}"
-
-            # ── Interactive actions ───────────────────
-            else:
-                # Get snapshot (reuses cached if available)
-                snapshot_content = await self.snapshot()
-
-                # Mask before sending to AI
-                masked_snapshot = self.creds.mask(snapshot_content)
-                masked_step = self.creds.mask_step(step)
-
-                element_info = await ai_service.pick_element(masked_snapshot, masked_step)
-                ref = element_info.get("ref")
-
-                if not ref:
-                    # Retry with fresh snapshot
-                    snapshot_content = await self.snapshot(force=True)
-                    masked_snapshot = self.creds.mask(snapshot_content)
-                    element_info = await ai_service.pick_element(masked_snapshot, masked_step)
-                    ref = element_info.get("ref")
-
-                if not ref:
+if __name__ == "__main__":
+    import uvicorn
+    host = os.getenv("HOST", "0.0.0.0")
+    port = int(os.getenv("PORT", "8000"))
+    print(f"\n{'='*50}")
+    print(f"  NLP Test Generator")
+    print(f"  AI Provider: {ai_service.provider_display}")
+    print(f"  Server: http://{host}:{port}")
+    print(f"{'='*50}\n")
+    uvicorn.run("app:app", host=host, port=port, reload=True)
+:
                     raise Exception(
                         f"Could not find element for: {description}. "
                         f"AI reasoning: {element_info.get('reasoning', 'unknown')}"
@@ -1760,36 +1064,6 @@ class Orchestrator:
 
             # ── 4. Assemble .robot file ───────────────
             test_name = re.sub(r"[^\w\s]", "", nlp_input)[:60].strip().title()
-            robot_script = assemble_robot_file(
-                test_name=test_name,
-                test_description=nlp_input,
-                base_url=start_url,
-                rf_lines=self.rf_lines,
-            )
-
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"test_{timestamp}.robot"
-            filepath = GENERATED_TESTS_DIR / filename
-            with open(filepath, "w") as f:
-                f.write(robot_script)
-
-            await self.send({
-                "type": "rf_script_complete",
-                "script": robot_script,
-                "filename": filename,
-            })
-
-            await self.send({
-                "type": "execution_complete",
-                "total_steps": len(self.steps),
-                "passed": passed,
-                "failed": failed,
-            })
-
-            print(f"\n[Done] {passed} passed, {failed} failed → {filename}")
-
-            # Cleanup
-            await run_cli("close", self.session_id, self.workspace)
 
         except Exception as e:
             print(f"\n[Error] {e}")
@@ -3618,3 +2892,650 @@ if __name__ == "__main__":
     print(f"  Health: http://{host}:{port}/api/health")
     print(f"{'='*50}\n")
     uvicorn.run("app:app", host=host, port=port, reload=True)
+
+
+
+___&&&_____
+
+"""
+NLP Test Generator — Standalone FastAPI Server
+Run: python app.py
+"""
+
+import asyncio
+import base64
+import concurrent.futures
+import glob
+import json
+import os
+import re
+import subprocess
+import tempfile
+import traceback
+import uuid
+from datetime import datetime
+from pathlib import Path
+from typing import Optional
+
+from dotenv import load_dotenv
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, HTMLResponse
+
+from ai_service import AIService
+from playwright_parser import assemble_robot_file, playwright_to_rf
+
+load_dotenv()
+
+app = FastAPI(title="NLP Test Generator", version="1.0.0")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+PLAYWRIGHT_CLI = os.getenv("PLAYWRIGHT_CLI_PATH", "playwright-cli")
+WORKSPACE_DIR = Path(os.getenv("NLP_WORKSPACE", os.path.join(tempfile.gettempdir(), "nlp-test-workspaces")))
+GENERATED_TESTS_DIR = Path("./generated_tests")
+WORKSPACE_DIR.mkdir(parents=True, exist_ok=True)
+GENERATED_TESTS_DIR.mkdir(parents=True, exist_ok=True)
+
+ai_service = AIService()
+_executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
+
+# Speed: actions that skip screenshot (non-visual changes)
+SKIP_SCREENSHOT_ACTIONS = {"fill", "check", "uncheck", "hover", "press_key", "wait"}
+
+# Speed: actions that trigger page changes (need extra wait)
+PAGE_CHANGE_WORDS = ["submit", "save", "create", "delete", "send", "login", "sign", "confirm", "add", "remove", "update", "navigate", "go to"]
+
+
+# ─── Credential Manager ──────────────────────────────────────────
+
+class CredentialManager:
+    """
+    Ensures credentials NEVER reach the AI.
+    - Replaces real values with ${VAR} before sending to AI
+    - Injects real values only at playwright-cli execution
+    - RF script uses ${VAR} references
+    """
+
+    def __init__(self, username: str = "", password: str = "", start_url: str = ""):
+        self.mappings = {}
+        if username:
+            self.mappings["${USERNAME}"] = username
+        if password:
+            self.mappings["${PASSWORD}"] = password
+        if start_url:
+            self.mappings["${BASE_URL}"] = start_url
+
+    def mask(self, text: str) -> str:
+        """Replace real values with placeholders (for AI)."""
+        result = text
+        for var, real in self.mappings.items():
+            if real and real in result:
+                result = result.replace(real, var)
+        return result
+
+    def unmask(self, text: str) -> str:
+        """Replace placeholders with real values (for playwright-cli)."""
+        result = text
+        for var, real in self.mappings.items():
+            if var in result:
+                result = result.replace(var, real)
+        return result
+
+    def mask_step(self, step: dict) -> dict:
+        """Return a copy of step with values masked."""
+        masked = dict(step)
+        if "value" in masked and masked["value"]:
+            masked["value"] = self.mask(str(masked["value"]))
+        if "target" in masked and masked["target"]:
+            masked["target"] = self.mask(str(masked["target"]))
+        if "expected" in masked and masked["expected"]:
+            masked["expected"] = self.mask(str(masked["expected"]))
+        return masked
+
+    def get_rf_variables(self) -> dict:
+        """Return variable dict for RF file header (values masked)."""
+        variables = {}
+        if "${USERNAME}" in self.mappings:
+            variables["USERNAME"] = "SET_AT_RUNTIME"
+        if "${PASSWORD}" in self.mappings:
+            variables["PASSWORD"] = "SET_AT_RUNTIME"
+        return variables
+
+
+# ─── Subprocess Helper ────────────────────────────────────────────
+
+async def run_cli(command: str, session: str = "default", cwd: str = "", timeout: float = 30.0) -> dict:
+    """Execute playwright-cli command (Windows compatible via thread pool)."""
+    full_cmd = f"{PLAYWRIGHT_CLI} -s={session} {command}"
+    work_dir = cwd or str(WORKSPACE_DIR)
+
+    print(f"  [CLI] {full_cmd}")
+
+    def _run():
+        try:
+            result = subprocess.run(
+                full_cmd, shell=True, capture_output=True,
+                cwd=work_dir, timeout=timeout,
+                encoding="utf-8", errors="replace",
+            )
+            return result.stdout, result.stderr, result.returncode
+        except subprocess.TimeoutExpired:
+            return "", "Command timed out", -1
+        except Exception as e:
+            return "", str(e), -1
+
+    loop = asyncio.get_event_loop()
+    stdout_str, stderr_str, returncode = await loop.run_in_executor(_executor, _run)
+
+    print(f"  [CLI stdout] {stdout_str[:500]}")
+    if stderr_str.strip():
+        print(f"  [CLI stderr] {stderr_str[:200]}")
+    print(f"  [CLI return] {returncode}")
+
+    snapshot_file = None
+    for line in stdout_str.split("\n"):
+        match = re.search(r"(\.playwright-cli[/\\][^\s\)\]]+\.yml)", line)
+        if match:
+            snapshot_file = os.path.join(work_dir, match.group(1))
+
+    screenshot_file = None
+    for line in stdout_str.split("\n"):
+        match = re.search(r"(\.playwright-cli[/\\][^\s\)\]]+\.png)", line)
+        if match:
+            screenshot_file = os.path.join(work_dir, match.group(1))
+
+    return {
+        "stdout": stdout_str,
+        "stderr": stderr_str,
+        "returncode": returncode,
+        "snapshot_file": snapshot_file,
+        "screenshot_file": screenshot_file,
+    }
+
+
+def read_file_content(path: str) -> str:
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            return f.read()
+    except (FileNotFoundError, IOError):
+        return ""
+
+
+def find_latest_file(directory: str, pattern: str) -> Optional[str]:
+    files = sorted(glob.glob(os.path.join(directory, pattern)), key=os.path.getmtime, reverse=True)
+    return files[0] if files else None
+
+
+def file_to_base64(path: str) -> Optional[str]:
+    try:
+        with open(path, "rb") as f:
+            return base64.b64encode(f.read()).decode("utf-8")
+    except (FileNotFoundError, IOError):
+        return None
+
+
+def extract_playwright_code(stdout: str) -> Optional[str]:
+    for line in stdout.strip().split("\n"):
+        line = line.strip()
+        if line.startswith("await page.") or line.startswith("page."):
+            return line
+    return None
+
+
+# ─── Orchestrator ─────────────────────────────────────────────────
+
+class Orchestrator:
+    def __init__(self, session_id: str, ws: WebSocket, creds: CredentialManager):
+        self.session_id = session_id
+        self.ws = ws
+        self.creds = creds
+        self.workspace = str(WORKSPACE_DIR / session_id)
+        self.cli_dir = os.path.join(self.workspace, ".playwright-cli")
+        self.paused = False
+        self.stopped = False
+        self.rf_lines: list[str] = []
+        self.steps: list[dict] = []
+        self.last_snapshot_content: str = ""  # Speed: reuse snapshots
+        self.last_screenshot_b64: Optional[str] = None  # Speed: reuse screenshots
+
+        os.makedirs(self.workspace, exist_ok=True)
+
+    async def send(self, msg: dict):
+        try:
+            await self.ws.send_json(msg)
+        except Exception:
+            pass
+
+    async def wait_if_paused(self):
+        while self.paused and not self.stopped:
+            await asyncio.sleep(0.3)
+
+    async def screenshot(self) -> Optional[str]:
+        result = await run_cli("screenshot", self.session_id, self.workspace)
+        path = result.get("screenshot_file") or find_latest_file(self.cli_dir, "*.png")
+        b64 = file_to_base64(path) if path else None
+        if b64:
+            self.last_screenshot_b64 = b64
+        return b64
+
+    async def snapshot(self, force: bool = False) -> str:
+        """Take snapshot. If not forced and we have a recent one, reuse it."""
+        if not force and self.last_snapshot_content:
+            return self.last_snapshot_content
+
+        result = await run_cli("snapshot", self.session_id, self.workspace)
+        path = result.get("snapshot_file") or find_latest_file(self.cli_dir, "*.yml")
+        content = read_file_content(path) if path else ""
+        if content:
+            self.last_snapshot_content = content
+        return content
+
+    def invalidate_snapshot(self):
+        """Mark snapshot as stale after an action changes the page."""
+        self.last_snapshot_content = ""
+
+    async def execute_step(self, step: dict, index: int) -> dict:
+        action = step.get("action", "")
+        description = step.get("description", "")
+
+        await self.send({
+            "type": "step_start",
+            "index": index,
+            "description": description,
+            "action": action,
+        })
+
+        try:
+            # ── Navigate ──────────────────────────────
+            if action == "navigate":
+                target = step.get("target", "")
+                real_target = self.creds.unmask(target)
+                await run_cli(f"goto {real_target}", self.session_id, self.workspace)
+                await asyncio.sleep(1.0)
+                self.invalidate_snapshot()
+                pw_code = f"page.goto('{target}')"
+                rf_line = f"    Go To    {target}"
+
+            # ── Wait ──────────────────────────────────
+            elif action == "wait":
+                duration = step.get("value", "2")
+                await asyncio.sleep(float(duration))
+                self.invalidate_snapshot()
+                rf_line = f"    Sleep    {duration}s"
+                pw_code = f"page.waitForTimeout({int(float(duration) * 1000)})"
+
+            # ── Assertions ────────────────────────────
+            elif action.startswith("assert"):
+                snapshot_content = await self.snapshot(force=True)
+                # Mask snapshot before sending to AI
+                masked_snapshot = self.creds.mask(snapshot_content)
+                masked_step = self.creds.mask_step(step)
+                assertion = await ai_service.generate_assertion(masked_snapshot, masked_step)
+                rf_line = assertion.get("full_line", f"    # Assertion: {description}")
+                pw_code = f"// Assertion: {description}"
+
+            # ── Interactive actions ───────────────────
+            else:
+                # Get snapshot (reuses cached if available)
+                snapshot_content = await self.snapshot()
+
+                # Mask before sending to AI
+                masked_snapshot = self.creds.mask(snapshot_content)
+                masked_step = self.creds.mask_step(step)
+
+                element_info = await ai_service.pick_element(masked_snapshot, masked_step)
+                ref = element_info.get("ref")
+
+                if not ref:
+                    # Retry with fresh snapshot
+                    snapshot_content = await self.snapshot(force=True)
+                    masked_snapshot = self.creds.mask(snapshot_content)
+                    element_info = await ai_service.pick_element(masked_snapshot, masked_step)
+                    ref = element_info.get("ref")
+
+                if not ref:
+                    raise Exception(
+                        f"Could not find element for: {description}. "
+                        f"AI reasoning: {element_info.get('reasoning', 'unknown')}"
+                    )
+
+                # Build CLI command — inject REAL credentials here
+                if action == "fill":
+                    value = step.get("value", "")
+                    real_value = self.creds.unmask(value)
+                    cli_cmd = f'fill {ref} "{real_value}"'
+                elif action == "select":
+                    value = step.get("value", "")
+                    real_value = self.creds.unmask(value)
+                    cli_cmd = f'select {ref} "{real_value}"'
+                elif action == "check":
+                    cli_cmd = f"check {ref}"
+                elif action == "uncheck":
+                    cli_cmd = f"uncheck {ref}"
+                elif action == "hover":
+                    cli_cmd = f"hover {ref}"
+                elif action == "press_key":
+                    key = step.get("value", "Enter")
+                    cli_cmd = f"press {key}"
+                else:
+                    cli_cmd = f"click {ref}"
+
+                result = await run_cli(cli_cmd, self.session_id, self.workspace)
+                self.invalidate_snapshot()
+
+                if result["returncode"] not in (0, None):
+                    error_msg = result["stderr"] or result["stdout"]
+                    if error_msg.strip():
+                        raise Exception(f"playwright-cli error: {error_msg.strip()[:200]}")
+
+                # Speed: shorter wait, only for page-changing actions
+                if action == "click" and any(w in description.lower() for w in PAGE_CHANGE_WORDS):
+                    await asyncio.sleep(1.0)
+
+                # Extract playwright_code
+                pw_code = extract_playwright_code(result["stdout"]) or f"// {cli_cmd}"
+
+                # Mask any leaked credentials in playwright_code
+                pw_code = self.creds.mask(pw_code)
+
+                # Convert to RF
+                clean_code = pw_code
+                if clean_code.startswith("await "):
+                    clean_code = clean_code[6:]
+                if clean_code.startswith("//"):
+                    rf_line = f"    # Action: {self.creds.mask(cli_cmd)}"
+                else:
+                    rf_line = playwright_to_rf(clean_code)
+
+                # Mask any credentials that leaked into RF line
+                rf_line = self.creds.mask(rf_line)
+
+            # Speed: only screenshot for visual actions
+            if action in SKIP_SCREENSHOT_ACTIONS:
+                screenshot_b64 = self.last_screenshot_b64
+            else:
+                screenshot_b64 = await self.screenshot()
+
+            self.rf_lines.append(rf_line)
+
+            return {
+                "status": "success",
+                "rf_line": rf_line,
+                "playwright_code": self.creds.mask(pw_code),
+                "screenshot_b64": screenshot_b64,
+                "error": None,
+            }
+
+        except Exception as e:
+            screenshot_b64 = await self.screenshot()
+            error_msg = self.creds.mask(str(e))  # mask errors too
+            self.rf_lines.append(f"    # FAILED: {description} — {error_msg[:100]}")
+
+            return {
+                "status": "failed",
+                "rf_line": f"    # FAILED: {description}",
+                "playwright_code": "",
+                "screenshot_b64": screenshot_b64,
+                "error": error_msg,
+            }
+
+    async def run(self, nlp_input: str, start_url: str):
+        try:
+            # ── 1. Break NLP into steps ───────────────
+            await self.send({"type": "status", "message": f"Analyzing with {ai_service.provider_display}..."})
+
+            # Mask NLP input before sending to AI
+            masked_nlp = self.creds.mask(nlp_input)
+            masked_url = self.creds.mask(start_url)
+            self.steps = await ai_service.break_into_steps(masked_nlp, masked_url)
+
+            await self.send({
+                "type": "steps_planned",
+                "steps": self.steps,
+                "total": len(self.steps),
+            })
+
+            print(f"\n[Orchestrator] {len(self.steps)} steps planned:")
+            for s in self.steps:
+                print(f"  {s['step']}. [{s['action']}] {s['description']}")
+
+            # ── 2. Open browser ───────────────────────
+            await self.send({"type": "status", "message": "Opening browser..."})
+
+            result = await run_cli(f"open {start_url}", self.session_id, self.workspace)
+
+            if result["returncode"] not in (0, None):
+                stderr = result["stderr"].strip()
+                if stderr:
+                    await self.send({"type": "error", "message": f"Failed to open browser: {stderr[:300]}"})
+                    return
+
+            await asyncio.sleep(1.5)
+
+            screenshot_b64 = await self.screenshot()
+            if screenshot_b64:
+                await self.send({
+                    "type": "step_complete",
+                    "index": -1,
+                    "status": "success",
+                    "screenshot_b64": screenshot_b64,
+                    "rf_line": "    New Page    ${BASE_URL}",
+                    "playwright_code": f"page.goto('{masked_url}')",
+                })
+
+            # ── 3. Execute each step ──────────────────
+            passed = 0
+            failed = 0
+
+            for i, step in enumerate(self.steps):
+                if self.stopped:
+                    await self.send({"type": "status", "message": "Stopped by user."})
+                    break
+
+                await self.wait_if_paused()
+
+                # Skip initial navigate
+                if i == 0 and step.get("action") == "navigate":
+                    target = step.get("target", "")
+                    if target in (start_url, masked_url, "${BASE_URL}", "/", ""):
+                        self.rf_lines.append("    # Initial navigation — handled by New Page")
+                        await self.send({
+                            "type": "step_complete", "index": i, "status": "skipped",
+                            "screenshot_b64": screenshot_b64,
+                            "rf_line": "    # Initial navigation — handled by New Page",
+                            "playwright_code": "",
+                        })
+                        passed += 1
+                        continue
+
+                print(f"\n[Step {i + 1}/{len(self.steps)}] {step['action']}: {step['description']}")
+
+                step_result = await self.execute_step(step, i)
+
+                if step_result["status"] == "success":
+                    passed += 1
+                    await self.send({
+                        "type": "step_complete", "index": i, "status": "success",
+                        "screenshot_b64": step_result["screenshot_b64"],
+                        "rf_line": step_result["rf_line"],
+                        "playwright_code": step_result["playwright_code"],
+                    })
+                    print(f"  ✓ RF: {step_result['rf_line'].strip()}")
+                else:
+                    failed += 1
+                    await self.send({
+                        "type": "step_failed", "index": i,
+                        "error": step_result["error"],
+                        "screenshot_b64": step_result["screenshot_b64"],
+                    })
+                    print(f"  ✗ Error: {step_result['error']}")
+
+                # Speed: reduced inter-step delay
+                await asyncio.sleep(0.3)
+
+            # ── 4. Assemble .robot file ───────────────
+            test_name = re.sub(r"[^\w\s]", "", nlp_input)[:60].strip().title()
+            robot_script = assemble_robot_file(
+                test_name=test_name,
+                test_description=self.creds.mask(nlp_input),
+                base_url="${BASE_URL}",
+                rf_lines=self.rf_lines,
+                variables=self.creds.get_rf_variables(),
+            )
+
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"test_{timestamp}.robot"
+            filepath = GENERATED_TESTS_DIR / filename
+            with open(filepath, "w", encoding="utf-8") as f:
+                f.write(robot_script)
+
+            await self.send({
+                "type": "rf_script_complete",
+                "script": robot_script,
+                "filename": filename,
+            })
+
+            await self.send({
+                "type": "execution_complete",
+                "total_steps": len(self.steps),
+                "passed": passed,
+                "failed": failed,
+            })
+
+            print(f"\n[Done] {passed} passed, {failed} failed → {filename}")
+            await run_cli("close", self.session_id, self.workspace)
+
+        except Exception as e:
+            error_detail = traceback.format_exc()
+            print(f"\n[Error]\n{error_detail}")
+            await self.send({"type": "error", "message": self.creds.mask(str(e)) or error_detail[-500:]})
+
+
+# ─── WebSocket Endpoint ──────────────────────────────────────────
+
+@app.websocket("/nlp-test/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+
+    session_id = str(uuid.uuid4())[:8]
+    orchestrator: Optional[Orchestrator] = None
+    task: Optional[asyncio.Task] = None
+
+    await websocket.send_json({"type": "connected", "session_id": session_id})
+    print(f"\n[WS] Client connected: {session_id}")
+
+    try:
+        while True:
+            data = await websocket.receive_json()
+            msg_type = data.get("type")
+
+            if msg_type == "start":
+                nlp_input = data.get("nlp_input", "").strip()
+                start_url = data.get("start_url", "").strip()
+                username = data.get("username", "").strip()
+                password = data.get("password", "").strip()
+
+                if not nlp_input or not start_url:
+                    await websocket.send_json({"type": "error", "message": "URL and test description are required."})
+                    continue
+
+                print(f"\n[Start] URL: {start_url}")
+                print(f"[Start] NLP: {nlp_input}")
+                if username:
+                    print(f"[Start] Credentials: provided (masked)")
+
+                creds = CredentialManager(username, password, start_url)
+                orchestrator = Orchestrator(session_id, websocket, creds)
+                task = asyncio.create_task(orchestrator.run(nlp_input, start_url))
+
+            elif msg_type == "pause" and orchestrator:
+                orchestrator.paused = True
+                await websocket.send_json({"type": "status", "message": "Paused."})
+
+            elif msg_type == "resume" and orchestrator:
+                orchestrator.paused = False
+                await websocket.send_json({"type": "status", "message": "Resumed."})
+
+            elif msg_type == "stop" and orchestrator:
+                orchestrator.stopped = True
+                if task:
+                    task.cancel()
+                await websocket.send_json({"type": "status", "message": "Stopped."})
+
+            elif msg_type == "retry_step" and orchestrator and orchestrator.steps:
+                idx = data.get("step_index", 0)
+                if 0 <= idx < len(orchestrator.steps):
+                    step_result = await orchestrator.execute_step(orchestrator.steps[idx], idx)
+                    msg_key = "step_complete" if step_result["status"] == "success" else "step_failed"
+                    await websocket.send_json({"type": msg_key, "index": idx, **step_result})
+
+    except WebSocketDisconnect:
+        print(f"[WS] Client disconnected: {session_id}")
+        if orchestrator:
+            orchestrator.stopped = True
+            await run_cli("close", session_id, str(WORKSPACE_DIR / session_id))
+    except Exception as e:
+        print(f"[WS Error] {traceback.format_exc()}")
+
+
+# ─── REST Endpoints ───────────────────────────────────────────────
+
+@app.get("/api/generated-tests")
+async def list_tests():
+    files = sorted(GENERATED_TESTS_DIR.glob("*.robot"), key=os.path.getmtime, reverse=True)
+    return [
+        {"filename": f.name, "created": datetime.fromtimestamp(f.stat().st_mtime).isoformat(), "size_bytes": f.stat().st_size}
+        for f in files
+    ]
+
+@app.get("/api/generated-tests/{filename}")
+async def download_test(filename: str):
+    filepath = GENERATED_TESTS_DIR / filename
+    if not filepath.exists():
+        return {"error": "File not found"}
+    return FileResponse(filepath, filename=filename, media_type="text/plain")
+
+@app.get("/api/health")
+async def health():
+    cli_ok = False
+    cli_version = "not found"
+    try:
+        result = subprocess.run(
+            f"{PLAYWRIGHT_CLI} --version", shell=True,
+            capture_output=True, encoding="utf-8", timeout=10,
+        )
+        cli_ok = result.returncode == 0
+        cli_version = result.stdout.strip() if cli_ok else "not found"
+    except Exception:
+        pass
+    return {
+        "status": "ok" if cli_ok else "degraded",
+        "playwright_cli": {"installed": cli_ok, "version": cli_version},
+        "ai_provider": ai_service.provider_display,
+    }
+
+@app.get("/")
+async def serve_ui():
+    html_path = Path(__file__).parent / "index.html"
+    if html_path.exists():
+        return HTMLResponse(html_path.read_text(encoding="utf-8"))
+    return HTMLResponse("<h2>Place index.html in the same directory as app.py</h2>")
+
+if __name__ == "__main__":
+    import uvicorn
+    host = os.getenv("HOST", "0.0.0.0")
+    port = int(os.getenv("PORT", "8000"))
+    print(f"\n{'='*50}")
+    print(f"  NLP Test Generator")
+    print(f"  AI Provider: {ai_service.provider_display}")
+    print(f"  Server: http://{host}:{port}")
+    print(f"{'='*50}\n")
+    uvicorn.run("app:app", host=host, port=port, reload=True)
+
+
