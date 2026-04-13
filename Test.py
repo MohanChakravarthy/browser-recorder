@@ -1,442 +1,417 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NLP Test Generator</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-        *{margin:0;padding:0;box-sizing:border-box}
-        html,body,#root{height:100%;width:100%;overflow:hidden}
-        body{background:#0a0e1a;color:#e2e8f0}
-        @keyframes spin{to{transform:rotate(360deg)}}
-        @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
-        @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
-        @keyframes glowPulse{0%{background:rgba(34,197,94,.15)}50%{background:rgba(34,197,94,.05)}100%{background:rgba(34,197,94,0)}}
-        ::-webkit-scrollbar{width:5px}
-        ::-webkit-scrollbar-track{background:#0a0e1a}
-        ::-webkit-scrollbar-thumb{background:#1e293b;border-radius:3px}
-        input:focus,textarea:focus{border-color:#3b82f6!important;outline:none}
-        button{transition:all .12s}button:hover{filter:brightness(1.1)}button:active{transform:scale(.98)}
-    </style>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs/loader.min.js"></script>
-</head>
-<body>
-<div id="root"></div>
-<script type="text/babel">
-const{useState,useRef,useEffect,useCallback}=React;
-const WS_BASE=`ws://${window.location.hostname||'localhost'}:${window.location.port||'8000'}`;
-const ICONS={pending:"○",running:"◉",success:"✓",failed:"✗",skipped:"⊘"};
-const COLORS={pending:"#4b5563",running:"#f59e0b",success:"#22c55e",failed:"#ef4444",skipped:"#6b7280"};
+"""
+NLP Test Generator v3 — Adaptive Agent Architecture
+AI sees page → decides → acts → sees result → repeats
+No blind pre-planning. Handles SSO, multi-step login, dynamic pages.
+"""
+import asyncio,base64,concurrent.futures,glob,json,os,re,subprocess,tempfile,traceback,uuid
+from datetime import datetime
+from pathlib import Path
+from typing import Optional
+from dotenv import load_dotenv
+from fastapi import FastAPI,WebSocket,WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse,HTMLResponse
+from ai_service import AIService
+from playwright_parser import assemble_robot_file,playwright_to_rf
+load_dotenv()
 
-// ─── Monaco Editor with line highlighting ────────────────
-function MonacoEditor({value,highlightLine}){
-    const cRef=useRef(null);
-    const edRef=useRef(null);
-    const monacoRef=useRef(null);
-    const decoRef=useRef([]);
+app=FastAPI(title="NLP Test Generator",version="3.0.0")
+app.add_middleware(CORSMiddleware,allow_origins=["*"],allow_credentials=True,allow_methods=["*"],allow_headers=["*"])
 
-    useEffect(()=>{
-        if(!cRef.current)return;
-        require.config({paths:{vs:'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs'}});
-        require(['vs/editor/editor.main'],function(monaco){
-            monacoRef.current=monaco;
+CLI=os.getenv("PLAYWRIGHT_CLI_PATH","playwright-cli")
+WS_DIR=Path(os.getenv("NLP_WORKSPACE",os.path.join(tempfile.gettempdir(),"nlp-test-ws")))
+OUT_DIR=Path("./generated_tests")
+WS_DIR.mkdir(parents=True,exist_ok=True)
+OUT_DIR.mkdir(parents=True,exist_ok=True)
+ai=AIService()
+_pool=concurrent.futures.ThreadPoolExecutor(max_workers=4)
 
-            if(!monaco.languages.getLanguages().find(l=>l.id==='robot')){
-                monaco.languages.register({id:'robot'});
-                monaco.languages.setMonarchTokensProvider('robot',{
-                    tokenizer:{root:[
-                        [/^\*\*\*.*\*\*\*/,'keyword.section'],
-                        [/\$\{[^}]+\}/,'variable'],
-                        [/\[Documentation\]|\[Setup\]|\[Teardown\]|\[Tags\]|\[Template\]/,'keyword.tag'],
-                        [/#\s*FAILED:.*$/,'error-line'],
-                        [/#\s*WARNING:.*$/,'warning-line'],
-                        [/#\s*MANUAL.*$/,'warning-line'],
-                        [/#.*$/,'comment'],
-                        [/Library|Resource|Variables|Suite Setup|Suite Teardown/,'keyword.setting'],
-                        [/\b(New Browser|New Page|Close Browser|Click|Fill Text|Get Text|Get Url|Get Element States|Get Element Count|Get Title|Wait For Elements State|Check Checkbox|Uncheck Checkbox|Select Options By|Hover|Keyboard Key|Type Text|Go To|Go Back|Reload|Sleep|Wait For Load State|Log|Take Screenshot)\b/,'support.function'],
-                        [/\b(==|!=|\*=|contains|visible|enabled|disabled|checked|hidden)\b/,'operator'],
-                        [/\b(headless=true|headless=false|chromium|firefox|webkit)\b/,'constant'],
-                        [/"[^"]*"/,'string'],
-                        [/'[^']*'/,'string'],
-                        [/SET_AT_RUNTIME/,'constant.warning'],
-                    ]}
-                });
-            }
+MAX_ACTIONS=35
+MAX_CONSECUTIVE_FAILS=3
+EXECUTION_TIMEOUT=300  # 5 minutes
 
-            monaco.editor.defineTheme('nlp-dark',{
-                base:'vs-dark',inherit:true,
-                rules:[
-                    {token:'keyword.section',foreground:'60a5fa',fontStyle:'bold'},
-                    {token:'variable',foreground:'c084fc'},
-                    {token:'keyword.tag',foreground:'f472b6'},
-                    {token:'keyword.setting',foreground:'60a5fa'},
-                    {token:'support.function',foreground:'34d399',fontStyle:'bold'},
-                    {token:'comment',foreground:'4b5563',fontStyle:'italic'},
-                    {token:'string',foreground:'fbbf24'},
-                    {token:'operator',foreground:'fb923c'},
-                    {token:'constant',foreground:'f472b6'},
-                    {token:'constant.warning',foreground:'f59e0b',fontStyle:'italic'},
-                    {token:'error-line',foreground:'fca5a5',fontStyle:'italic'},
-                    {token:'warning-line',foreground:'fbbf24',fontStyle:'italic'},
-                ],
-                colors:{
-                    'editor.background':'#080c16',
-                    'editor.foreground':'#e2e8f0',
-                    'editor.lineHighlightBackground':'#1e293b30',
-                    'editorLineNumber.foreground':'#1e293b',
-                    'editorLineNumber.activeForeground':'#475569',
-                    'editor.selectionBackground':'#3b82f640',
-                    'editorCursor.foreground':'#3b82f6',
-                    'editorGutter.background':'#080c16',
-                    'scrollbarSlider.background':'#1e293b80',
-                }
-            });
+# ─── Helpers ──────────────────────────────────────────────
 
-            edRef.current=monaco.editor.create(cRef.current,{
-                value:value||'',language:'robot',theme:'nlp-dark',readOnly:true,
-                minimap:{enabled:false},fontSize:13,lineHeight:22,
-                fontFamily:"'JetBrains Mono','Fira Code',monospace",
-                fontLigatures:true,lineNumbers:'on',scrollBeyondLastLine:false,
-                renderLineHighlight:'none',automaticLayout:true,
-                padding:{top:12,bottom:12},
-                scrollbar:{vertical:'auto',horizontal:'auto',verticalScrollbarSize:6,horizontalScrollbarSize:6},
-                overviewRulerBorder:false,hideCursorInOverviewRuler:true,contextmenu:false,wordWrap:'on',
-                renderWhitespace:'none',guides:{indentation:false},
-            });
-        });
-        return()=>{if(edRef.current){edRef.current.dispose();edRef.current=null}};
-    },[]);
+async def cli(cmd,session="default",cwd="",timeout=30.0):
+    full=f"{CLI} -s={session} {cmd}"
+    wd=cwd or str(WS_DIR)
+    print(f"  [CLI] {full}")
+    def _r():
+        try:
+            r=subprocess.run(full,shell=True,capture_output=True,cwd=wd,timeout=timeout,encoding="utf-8",errors="replace")
+            return r.stdout,r.stderr,r.returncode
+        except subprocess.TimeoutExpired: return "","Timeout",-1
+        except Exception as e: return "",str(e),-1
+    loop=asyncio.get_event_loop()
+    out,err,rc=await loop.run_in_executor(_pool,_r)
+    if out.strip(): print(f"  [out] {out[:300]}")
+    if err.strip(): print(f"  [err] {err[:150]}")
+    snap=None
+    for l in out.split("\n"):
+        m=re.search(r"(\.playwright-cli[/\\][^\s\)\]]+\.yml)",l)
+        if m: snap=os.path.join(wd,m.group(1))
+    shot=None
+    for l in out.split("\n"):
+        m=re.search(r"(\.playwright-cli[/\\][^\s\)\]]+\.png)",l)
+        if m: shot=os.path.join(wd,m.group(1))
+    return {"stdout":out,"stderr":err,"rc":rc,"snap":snap,"shot":shot}
 
-    // Update content
-    useEffect(()=>{
-        if(!edRef.current||value===undefined)return;
-        const model=edRef.current.getModel();
-        if(model&&model.getValue()!==value){
-            model.setValue(value);
-            const lc=model.getLineCount();
-            edRef.current.revealLine(lc);
-        }
-    },[value]);
+def readf(p):
+    try:
+        with open(p,"r",encoding="utf-8",errors="replace") as f: return f.read()
+    except: return ""
 
-    // Highlight latest line with glow animation
-    useEffect(()=>{
-        if(!edRef.current||!monacoRef.current||!highlightLine||highlightLine<1)return;
-        const monaco=monacoRef.current;
+def latest(d,pat):
+    fs=sorted(glob.glob(os.path.join(d,pat)),key=os.path.getmtime,reverse=True)
+    return fs[0] if fs else None
 
-        // Remove old decorations
-        decoRef.current=edRef.current.deltaDecorations(decoRef.current,[
-            {
-                range:new monaco.Range(highlightLine,1,highlightLine,1),
-                options:{
-                    isWholeLine:true,
-                    className:'highlight-new-line',
-                    glyphMarginClassName:'highlight-glyph',
-                }
-            }
-        ]);
+def b64(p):
+    try:
+        with open(p,"rb") as f: return base64.b64encode(f.read()).decode()
+    except: return None
 
-        edRef.current.revealLineInCenter(highlightLine);
+def extract_pw(out):
+    for l in out.strip().split("\n"):
+        l=l.strip()
+        if l.startswith("await page.") or l.startswith("page."): return l
+    return None
 
-        // Remove highlight after animation
-        const timer=setTimeout(()=>{
-            if(edRef.current){
-                decoRef.current=edRef.current.deltaDecorations(decoRef.current,[]);
-            }
-        },2000);
-        return()=>clearTimeout(timer);
-    },[highlightLine]);
+def is_ref(r):
+    if not r: return False
+    s=str(r).strip().lower()
+    return s not in ("null","none","","undefined")
 
-    // Inject highlight CSS once
-    useEffect(()=>{
-        if(document.getElementById('monaco-highlight-css'))return;
-        const style=document.createElement('style');
-        style.id='monaco-highlight-css';
-        style.textContent=`
-            .highlight-new-line{animation:glowPulse 2s ease-out forwards;border-left:2px solid #22c55e}
-            .highlight-glyph{background:transparent}
-        `;
-        document.head.appendChild(style);
-    },[]);
+# ─── Credential Manager ──────────────────────────────────
 
-    return <div ref={cRef} style={{width:'100%',height:'100%'}}/>;
-}
+class Creds:
+    def __init__(self,user="",pwd="",url=""):
+        self.user=user; self.pwd=pwd; self.url=url
+    def mask(self,t):
+        if self.pwd and self.pwd in t: t=t.replace(self.pwd,"${PASSWORD}")
+        if self.user and self.user in t: t=t.replace(self.user,"${USERNAME}")
+        return t
+    def unmask(self,t):
+        t=t.replace("${USERNAME}",self.user) if self.user else t
+        t=t.replace("${PASSWORD}",self.pwd) if self.pwd else t
+        return t
+    def rf_vars(self):
+        v={}
+        if self.user: v["USERNAME"]="SET_AT_RUNTIME"
+        if self.pwd: v["PASSWORD"]="SET_AT_RUNTIME"
+        return v
 
-// ─── App ─────────────────────────────────────────────────
-function App(){
-    const[connected,setConnected]=useState(false);
-    const wsRef=useRef(null);
+# ─── Agent Orchestrator ──────────────────────────────────
 
-    const[nlp,setNlp]=useState("");
-    const[url,setUrl]=useState("");
-    const[user,setUser]=useState("");
-    const[pwd,setPwd]=useState("");
-    const[showCreds,setShowCreds]=useState(false);
+class Agent:
+    def __init__(self,sid,ws,creds):
+        self.sid=sid; self.ws=ws; self.creds=creds
+        self.wd=str(WS_DIR/sid)
+        self.cli_dir=os.path.join(self.wd,".playwright-cli")
+        self.stopped=False; self.paused=False
+        self.history=[]; self.rf_lines=[]; self.last_ss=None
+        os.makedirs(self.wd,exist_ok=True)
 
-    const[running,setRunning]=useState(false);
-    const[paused,setPaused]=useState(false);
-    const[steps,setSteps]=useState([]);
-    const[statuses,setStatuses]=useState([]);
-    const[curStep,setCurStep]=useState(-1);
-    const[status,setStatus]=useState("");
+    async def send(self,m):
+        try: await self.ws.send_json(m)
+        except: pass
 
-    const[ss,setSs]=useState(null);
-    const[rfLines,setRfLines]=useState([]);
-    const[finalScript,setFinal]=useState("");
-    const[liveScript,setLive]=useState("");
-    const[hlLine,setHlLine]=useState(0);
-    const[result,setResult]=useState(null);
-    const[copyLbl,setCopyLbl]=useState("Copy");
+    async def screenshot(self):
+        r=await cli("screenshot",self.sid,self.wd)
+        p=r["shot"] or latest(self.cli_dir,"*.png")
+        s=b64(p) if p else None
+        if s: self.last_ss=s
+        return s
 
-    // Build live preview
-    useEffect(()=>{
-        if(finalScript)return;
-        if(!rfLines.length)return;
-        const lines=[
-            "*** Settings ***","Library    Browser","",
-            "*** Variables ***",
-            `\${BASE_URL}    ${url||'https://...'}`,
-            user?"${USERNAME}    SET_AT_RUNTIME":null,
-            pwd?"${PASSWORD}    SET_AT_RUNTIME":null,
-            "","*** Test Cases ***","NLP Generated Test",
-            `    [Documentation]    ${nlp.slice(0,80)}`,
-            "    New Browser    chromium    headless=true",
-            "    New Page    ${BASE_URL}","",
-            ...rfLines,"","    [Teardown]    Close Browser",
-        ].filter(l=>l!==null).join("\n");
-        setLive(lines);
+    async def snapshot(self):
+        r=await cli("snapshot",self.sid,self.wd)
+        p=r["snap"] or latest(self.cli_dir,"*.yml")
+        return readf(p) if p else ""
 
-        // Calculate highlight line: header lines + current rf line
-        const headerCount=lines.split("\n").length-rfLines.length-1;
-        setHlLine(headerCount+rfLines.length);
-    },[rfLines,finalScript,url,nlp,user,pwd]);
+    async def execute_action(self,decision):
+        """Execute a single action decided by the AI agent."""
+        action=decision.get("action","")
+        ref=decision.get("ref","")
+        value=decision.get("value","")
+        desc=decision.get("description","")
 
-    // When final script arrives, highlight last meaningful line
-    useEffect(()=>{
-        if(!finalScript)return;
-        const lines=finalScript.split("\n");
-        setHlLine(lines.length-2); // line before [Teardown]
-    },[finalScript]);
+        try:
+            if action=="wait":
+                dur=float(value or "2")
+                await asyncio.sleep(dur)
+                return {"ok":True,"rf":f"    Sleep    {dur}s","pw":f"page.waitForTimeout({int(dur*1000)})"}
 
-    const connect=useCallback(()=>{
-        if(wsRef.current?.readyState===WebSocket.OPEN)return;
-        const ws=new WebSocket(`${WS_BASE}/nlp-test/ws`);
-        wsRef.current=ws;
-        ws.onopen=()=>setConnected(true);
-        ws.onclose=()=>{setConnected(false);setRunning(false)};
-        ws.onerror=()=>setConnected(false);
-        ws.onmessage=e=>handleMsg(JSON.parse(e.data));
-    },[]);
+            if action in ("assert_text","assert_visible","assert_url"):
+                hint=decision.get("locator_hint","")
+                if action=="assert_visible":
+                    loc=hint or f"ref={ref}"
+                    rf=f"    Get Element States    {loc}    contains    visible"
+                elif action=="assert_text":
+                    loc=hint or f"ref={ref}"
+                    rf=f"    Get Text    {loc}    *=    {self.creds.mask(value)}"
+                elif action=="assert_url":
+                    rf=f"    Get Url    *=    {self.creds.mask(value)}"
+                return {"ok":True,"rf":rf,"pw":f"// {desc}"}
 
-    const send=useCallback(m=>{
-        if(wsRef.current?.readyState===WebSocket.OPEN)wsRef.current.send(JSON.stringify(m));
-    },[]);
+            # Interactive actions
+            if not is_ref(ref):
+                return {"ok":False,"error":f"Invalid element ref: {ref}","rf":"","pw":""}
 
-    const handleMsg=useCallback(d=>{
-        switch(d.type){
-            case"connected":break;
-            case"status":setStatus(d.message);break;
-            case"steps_planned":setSteps(d.steps);setStatuses(d.steps.map(()=>"pending"));break;
-            case"step_start":
-                setCurStep(d.index);
-                setStatuses(p=>{const n=[...p];if(d.index>=0)n[d.index]="running";return n});
-                setStatus(`Step ${d.index+1}: ${d.description}`);
-                break;
-            case"step_complete":
-                if(d.screenshot_b64)setSs(d.screenshot_b64);
-                if(d.rf_line)setRfLines(p=>[...p,d.rf_line]);
-                setStatuses(p=>{const n=[...p];if(d.index>=0)n[d.index]=d.status==="skipped"?"skipped":"success";return n});
-                break;
-            case"step_failed":
-                if(d.screenshot_b64)setSs(d.screenshot_b64);
-                if(d.rf_line)setRfLines(p=>[...p,`    # FAILED: ${d.error?.slice(0,80)||'unknown'}`]);
-                setStatuses(p=>{const n=[...p];if(d.index>=0)n[d.index]="failed";return n});
-                setStatus(`✗ Step ${d.index+1}: ${d.error}`);
-                break;
-            case"rf_script_complete":setFinal(d.script);setStatus("✓ Script generated!");break;
-            case"execution_complete":setRunning(false);setResult(d);break;
-            case"error":setStatus(`Error: ${d.message}`);setRunning(false);break;
-        }
-    },[]);
+            if action=="fill":
+                real_val=self.creds.unmask(value) if value else ""
+                if not real_val:
+                    return {"ok":False,"error":"Fill action requires a value","rf":"","pw":""}
+                r=await cli(f'fill {ref} "{real_val}"',self.sid,self.wd)
+            elif action=="press_key":
+                r=await cli(f"press {value or 'Enter'}",self.sid,self.wd)
+            elif action=="click":
+                r=await cli(f"click {ref}",self.sid,self.wd)
+            else:
+                r=await cli(f"{action} {ref}",self.sid,self.wd)
 
-    useEffect(()=>{connect();return()=>wsRef.current?.close()},[connect]);
+            if r["rc"] not in (0,None):
+                err=r["stderr"].strip() or r["stdout"].strip()
+                return {"ok":False,"error":err[:200],"rf":"","pw":""}
 
-    const start=()=>{
-        if(!nlp.trim()||!url.trim())return;
-        setSteps([]);setStatuses([]);setCurStep(-1);setRfLines([]);
-        setFinal("");setLive("");setSs(null);setResult(null);setHlLine(0);
-        setRunning(true);setPaused(false);
-        send({type:"start",nlp_input:nlp.trim(),start_url:url.trim(),username:user.trim(),password:pwd.trim()});
-    };
+            # Smart wait based on action type
+            if action=="click":
+                desc_low=desc.lower()
+                if any(w in desc_low for w in ["login","sign in","submit","next","continue","confirm","save","create","delete"]):
+                    await asyncio.sleep(2.0)
+                else:
+                    await asyncio.sleep(0.8)
+            elif action=="fill":
+                await asyncio.sleep(0.2)
 
-    const ok=nlp.trim()&&url.trim()&&connected&&!running;
-    const script=finalScript||liveScript;
+            # Extract playwright_code → RF
+            pw=extract_pw(r["stdout"])
+            if pw:
+                clean=pw.lstrip("await ").lstrip()
+                if clean.startswith("await "): clean=clean[6:]
+                rf=playwright_to_rf(clean)
+            else:
+                hint=decision.get("locator_hint","")
+                if action=="click":
+                    rf=f"    Click    {hint or f'ref={ref}'}"
+                elif action=="fill":
+                    rf=f"    Fill Text    {hint or f'ref={ref}'}    {self.creds.mask(value)}"
+                elif action=="press_key":
+                    rf=f"    Keyboard Key    {value}"
+                else:
+                    rf=f"    # {action} on {hint or ref}"
 
-    return(
-    <div style={S.box}>
-        {/* Header */}
-        <div style={S.hdr}>
-            <div style={S.hdrL}>
-                <div style={S.logo}>⚡</div>
-                <h1 style={S.h1}>NLP Test Generator</h1>
-                <div style={{...S.dot,background:connected?'#22c55e':'#ef4444'}}/>
-            </div>
-            <div style={S.hdrR}>
-                {result&&<>
-                    <span style={{...S.pill,background:'#052e16',color:'#4ade80'}}>{result.passed}✓</span>
-                    {result.failed>0&&<span style={{...S.pill,background:'#2a0a0a',color:'#fca5a5'}}>{result.failed}✗</span>}
-                </>}
-            </div>
-        </div>
+            rf=self.creds.mask(rf)
+            pw=self.creds.mask(pw or "")
+            return {"ok":True,"rf":rf,"pw":pw}
 
-        {/* Inputs */}
-        <div style={S.inputs}>
-            <div style={S.row}>
-                <div style={{flex:1}}>
-                    <label style={S.lbl}>Target URL</label>
-                    <input style={S.inp} placeholder="https://your-app.com" value={url} onChange={e=>setUrl(e.target.value)} disabled={running}/>
-                </div>
-                <button style={{...S.credBtn,color:showCreds?'#3b82f6':'#4b5563'}} onClick={()=>setShowCreds(!showCreds)}>
-                    🔑 {showCreds?'Hide':'Credentials'}
-                </button>
-            </div>
+        except Exception as e:
+            return {"ok":False,"error":self.creds.mask(str(e))[:200],"rf":"","pw":""}
 
-            {showCreds&&(
-                <div style={{...S.row,animation:'fadeIn .2s ease'}}>
-                    <div style={{flex:1}}>
-                        <label style={S.lbl}>Username / Email</label>
-                        <input style={S.inp} placeholder="user@example.com" value={user} onChange={e=>setUser(e.target.value)} disabled={running} autoComplete="off"/>
-                    </div>
-                    <div style={{flex:1}}>
-                        <label style={S.lbl}>Password</label>
-                        <input style={S.inp} type="password" placeholder="••••••••" value={pwd} onChange={e=>setPwd(e.target.value)} disabled={running} autoComplete="new-password"/>
-                    </div>
-                    <div style={S.lock}>🔒 Never sent to AI logs</div>
-                </div>
-            )}
+    async def run(self,goal,url):
+        import time
+        start_time=time.time()
+        try:
+            # ── Open browser ──────────────────────
+            await self.send({"type":"status","message":"Opening browser..."})
+            r=await cli(f"open {url}",self.sid,self.wd)
+            if r["rc"] not in (0,None):
+                await self.send({"type":"error","message":f"Browser failed: {r['stderr'][:200]}"})
+                return
 
-            <div style={S.row}>
-                <div style={{flex:1}}>
-                    <label style={S.lbl}>Test Description</label>
-                    <input style={S.inp} placeholder='e.g. "Login with credentials, go to orders, create new order with qty 5, verify success"'
-                        value={nlp} onChange={e=>setNlp(e.target.value)} disabled={running}
-                        onKeyDown={e=>e.key==="Enter"&&ok&&start()}/>
-                </div>
-                <div style={S.btns}>
-                    {!running?(
-                        <button style={{...S.btn,...S.btnGo,opacity:ok?1:.4}} onClick={start} disabled={!ok}>▶ Generate</button>
-                    ):(<>
-                        <button style={{...S.btn,...S.btnW}} onClick={()=>{send({type:paused?"resume":"pause"});setPaused(!paused)}}>{paused?"▶":"⏸"}</button>
-                        <button style={{...S.btn,...S.btnD}} onClick={()=>{send({type:"stop"});setRunning(false);setPaused(false)}}>■</button>
-                    </>)}
-                </div>
-            </div>
-        </div>
+            await asyncio.sleep(2.5)
 
-        {/* Split */}
-        <div style={S.split}>
-            {/* Left */}
-            <div style={S.left}>
-                <div style={S.ssBox}>
-                    {ss?<img src={`data:image/png;base64,${ss}`} alt="" style={S.ssImg}/>
-                    :<div style={S.ph}><div style={{fontSize:44,opacity:.12}}>🌐</div><div style={S.phT}>Browser preview</div></div>}
-                </div>
+            # Verify page loaded
+            snap=await self.snapshot()
+            if not snap.strip():
+                await asyncio.sleep(2)
+                snap=await self.snapshot()
+                if not snap.strip():
+                    await self.send({"type":"error","message":"Page failed to load. Check URL."})
+                    return
 
-                {status&&<div style={S.stat}>{running&&<span style={S.spin}/>}{status}</div>}
+            ss=await self.screenshot()
+            await self.send({"type":"browser_ready","screenshot_b64":ss})
 
-                {steps.length>0&&(
-                    <div style={S.stWrap}>
-                        <div style={S.stHead}>Steps {statuses.filter(s=>s==="success"||s==="skipped").length}/{steps.length}</div>
-                        <div style={S.stList}>
-                            {steps.map((s,i)=>(
-                                <div key={i} style={{...S.stRow,borderLeftColor:COLORS[statuses[i]]||COLORS.pending,background:curStep===i?'#111827':'transparent',animation:statuses[i]==="running"?"pulse 1.5s infinite":"none"}}>
-                                    <span style={{...S.stIco,color:COLORS[statuses[i]]}}>{ICONS[statuses[i]]||ICONS.pending}</span>
-                                    <span style={S.stAct}>{s.action}</span>
-                                    <span style={S.stDsc}>{s.description}</span>
-                                    {statuses[i]==="failed"&&<button style={S.retry} onClick={()=>{send({type:"retry_step",step_index:i});setStatuses(p=>{const n=[...p];n[i]="running";return n})}}>↻</button>}
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                )}
-            </div>
+            # ── Agent loop ────────────────────────
+            consec_fails=0
+            action_index=0
 
-            <div style={S.div}/>
+            for _ in range(MAX_ACTIONS):
+                if self.stopped: break
+                while self.paused and not self.stopped: await asyncio.sleep(0.3)
+                if time.time()-start_time > EXECUTION_TIMEOUT:
+                    await self.send({"type":"status","message":"Execution timeout (5 min). Stopping."})
+                    break
 
-            {/* Right — Monaco */}
-            <div style={S.right}>
-                <div style={S.cHead}>
-                    <span style={S.cTitle}>{finalScript?'✓ Generated .robot':rfLines.length?`Building... (${rfLines.length} lines)`:'RF Browser Code'}</span>
-                    <div style={{display:'flex',gap:4}}>
-                        {script&&<>
-                            <button style={S.cBtn} onClick={()=>{navigator.clipboard.writeText(script);setCopyLbl("✓");setTimeout(()=>setCopyLbl("Copy"),2000)}}>{copyLbl}</button>
-                            <button style={S.cBtn} onClick={()=>{const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([script],{type:"text/plain"}));a.download=`test_${Date.now()}.robot`;a.click()}}>↓ .robot</button>
-                        </>}
-                    </div>
-                </div>
-                <div style={S.monaco}>
-                    {script?<MonacoEditor value={script} highlightLine={hlLine}/>
-                    :<div style={S.ph}><div style={{fontFamily:"'JetBrains Mono'",fontSize:28,opacity:.08}}>{"{ }"}</div><div style={S.phT}>Code builds here as steps execute</div></div>}
-                </div>
-            </div>
-        </div>
-    </div>
-    );
-}
+                # 1. Snapshot current page
+                await self.send({"type":"thinking","message":"AI analyzing page..."})
+                snap=await self.snapshot()
+                if not snap.strip():
+                    await asyncio.sleep(1.5)
+                    snap=await self.snapshot()
+                if not snap.strip():
+                    await self.send({"type":"error","message":"Lost connection to page"})
+                    break
 
-const S={
-    box:{width:'100%',height:'100vh',display:'flex',flexDirection:'column',background:'#0a0e1a',fontFamily:"'Inter',sans-serif",overflow:'hidden'},
-    hdr:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'7px 16px',borderBottom:'1px solid #151b2e',flexShrink:0,background:'#0d1220'},
-    hdrL:{display:'flex',alignItems:'center',gap:10},
-    hdrR:{display:'flex',gap:6},
-    logo:{fontSize:15,width:26,height:26,display:'flex',alignItems:'center',justifyContent:'center',background:'linear-gradient(135deg,#3b82f6,#8b5cf6)',borderRadius:6},
-    h1:{fontSize:13,fontWeight:700,color:'#f1f5f9',fontFamily:"'JetBrains Mono',monospace",letterSpacing:'-.02em'},
-    dot:{width:7,height:7,borderRadius:'50%'},
-    pill:{fontSize:11,padding:'2px 8px',borderRadius:99,fontWeight:600,fontFamily:"'JetBrains Mono',monospace"},
+                # 2. AI decides next action
+                decision=await ai.decide_next_action(
+                    goal=goal, snapshot=self.creds.mask(snap),
+                    history=self.history,
+                    username=self.creds.user, password=self.creds.pwd,
+                )
 
-    inputs:{padding:'8px 16px',borderBottom:'1px solid #151b2e',flexShrink:0,display:'flex',flexDirection:'column',gap:7,background:'#0d1220'},
-    row:{display:'flex',gap:8,alignItems:'flex-end'},
-    lbl:{display:'block',fontSize:9,color:'#4b5563',marginBottom:2,fontWeight:700,textTransform:'uppercase',letterSpacing:'.08em'},
-    inp:{width:'100%',padding:'6px 10px',fontSize:12,background:'#111827',border:'1px solid #1e293b',borderRadius:4,color:'#e2e8f0',fontFamily:"'Inter',sans-serif"},
-    credBtn:{background:'none',border:'1px solid #1e293b',borderRadius:4,padding:'6px 10px',fontSize:11,cursor:'pointer',fontFamily:"'Inter',sans-serif",whiteSpace:'nowrap',flexShrink:0},
-    lock:{fontSize:9,color:'#22c55e',whiteSpace:'nowrap',padding:'0 0 5px 0',flexShrink:0,fontWeight:700},
-    btns:{display:'flex',gap:4,flexShrink:0},
-    btn:{padding:'6px 14px',fontSize:12,fontWeight:600,border:'none',borderRadius:4,cursor:'pointer',fontFamily:"'JetBrains Mono',monospace",whiteSpace:'nowrap'},
-    btnGo:{background:'linear-gradient(135deg,#3b82f6,#2563eb)',color:'#fff',minWidth:100},
-    btnW:{background:'#f59e0b',color:'#000',minWidth:32},
-    btnD:{background:'#ef4444',color:'#fff',minWidth:32},
+                status=decision.get("status","action")
+                desc=self.creds.mask(decision.get("description",""))
+                reasoning=self.creds.mask(decision.get("reasoning",""))
+                action_type=decision.get("action","")
 
-    split:{flex:1,display:'flex',overflow:'hidden',minHeight:0},
-    div:{width:1,background:'#151b2e',flexShrink:0},
+                # 3. Goal achieved
+                if status=="goal_achieved":
+                    await self.send({"type":"goal_achieved","message":reasoning or "Goal accomplished!"})
+                    print(f"\n[✓ GOAL ACHIEVED] {reasoning}")
+                    break
 
-    left:{flex:'0 0 58%',display:'flex',flexDirection:'column',overflow:'hidden'},
-    ssBox:{flex:'0 0 42%',padding:8,display:'flex',alignItems:'center',justifyContent:'center',background:'#070a14',borderBottom:'1px solid #151b2e',overflow:'hidden'},
-    ssImg:{maxWidth:'100%',maxHeight:'100%',objectFit:'contain',borderRadius:3,border:'1px solid #1e293b'},
-    ph:{textAlign:'center',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'100%',gap:4},
-    phT:{fontSize:11,color:'#1e293b'},
-    stat:{padding:'5px 12px',fontSize:10,color:'#94a3b8',background:'#111827',borderBottom:'1px solid #1e293b',display:'flex',alignItems:'center',gap:6,flexShrink:0,fontFamily:"'JetBrains Mono',monospace",lineHeight:1.4},
-    spin:{display:'inline-block',width:9,height:9,border:'2px solid #1e293b',borderTopColor:'#3b82f6',borderRadius:'50%',animation:'spin .7s linear infinite',flexShrink:0},
+                # 4. Stuck
+                if status=="stuck":
+                    await self.send({"type":"action_stuck","index":action_index,"description":desc,"reasoning":reasoning})
+                    print(f"\n[✗ STUCK] {reasoning}")
+                    break
 
-    stWrap:{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'},
-    stHead:{padding:'5px 12px',fontSize:9,fontWeight:700,color:'#4b5563',textTransform:'uppercase',letterSpacing:'.06em',borderBottom:'1px solid #151b2e',flexShrink:0,fontFamily:"'JetBrains Mono',monospace"},
-    stList:{flex:1,overflowY:'auto',padding:'1px 0'},
-    stRow:{display:'flex',alignItems:'center',gap:7,padding:'3px 12px',borderLeft:'3px solid transparent'},
-    stIco:{fontSize:11,fontWeight:700,width:13,textAlign:'center',flexShrink:0,fontFamily:"'JetBrains Mono',monospace"},
-    stAct:{fontSize:8,fontWeight:700,color:'#3b82f6',textTransform:'uppercase',flexShrink:0,letterSpacing:'.04em',fontFamily:"'JetBrains Mono',monospace",minWidth:52},
-    stDsc:{fontSize:11,color:'#cbd5e1',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',flex:1,minWidth:0},
-    retry:{background:'none',border:'1px solid #374151',color:'#f59e0b',fontSize:12,cursor:'pointer',borderRadius:3,padding:'0 5px',flexShrink:0},
+                # 5. Execute action
+                await self.send({"type":"action_start","index":action_index,"action":action_type,"description":desc,"reasoning":reasoning})
+                print(f"\n[Action {action_index+1}] {action_type}: {desc}")
 
-    right:{flex:'0 0 42%',display:'flex',flexDirection:'column',overflow:'hidden'},
-    cHead:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'5px 12px',borderBottom:'1px solid #151b2e',flexShrink:0,background:'#0d1220'},
-    cTitle:{fontSize:9,fontWeight:700,color:'#4b5563',textTransform:'uppercase',letterSpacing:'.06em',fontFamily:"'JetBrains Mono',monospace"},
-    cBtn:{background:'#111827',border:'1px solid #1e293b',color:'#94a3b8',fontSize:9,padding:'2px 7px',borderRadius:3,cursor:'pointer',fontFamily:"'JetBrains Mono',monospace"},
-    monaco:{flex:1,overflow:'hidden',background:'#080c16'},
-};
+                result=await self.execute_action(decision)
 
-ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
-</script>
-</body>
-</html>
+                if result["ok"]:
+                    consec_fails=0
+                    self.rf_lines.append(result["rf"])
+                    self.history.append({"action":action_type,"description":desc,"status":"success"})
+
+                    # Screenshot for visual actions
+                    ss_b64=self.last_ss
+                    if action_type not in ("wait","fill","press_key"):
+                        ss_b64=await self.screenshot()
+
+                    await self.send({
+                        "type":"action_complete","index":action_index,
+                        "rf_line":result["rf"],"playwright_code":result["pw"],
+                        "screenshot_b64":ss_b64,
+                    })
+                    print(f"  ✓ {result['rf'].strip()}")
+                else:
+                    consec_fails+=1
+                    self.history.append({"action":action_type,"description":desc,"status":"failed","error":result["error"]})
+
+                    ss_b64=await self.screenshot()
+                    await self.send({
+                        "type":"action_failed","index":action_index,
+                        "error":result["error"],"screenshot_b64":ss_b64,
+                    })
+                    print(f"  ✗ {result['error']}")
+
+                    if consec_fails>=MAX_CONSECUTIVE_FAILS:
+                        await self.send({"type":"status","message":f"Stopped: {MAX_CONSECUTIVE_FAILS} consecutive failures"})
+                        print(f"\n[STOPPED] {MAX_CONSECUTIVE_FAILS} consecutive failures")
+                        break
+
+                action_index+=1
+                await asyncio.sleep(0.3)
+
+            # ── Generate .robot file ──────────────
+            passed=sum(1 for h in self.history if h["status"]=="success")
+            failed=sum(1 for h in self.history if h["status"]=="failed")
+
+            if self.rf_lines:
+                name=re.sub(r"[^\w\s]","",goal)[:60].strip().title()
+                script=assemble_robot_file(
+                    test_name=name,
+                    test_description=self.creds.mask(goal),
+                    base_url=url,
+                    rf_lines=[l for l in self.rf_lines if not l.startswith("    #")],  # skip comments
+                    variables=self.creds.rf_vars(),
+                )
+                script=self.creds.mask(script)
+
+                ts=datetime.now().strftime("%Y%m%d_%H%M%S")
+                fn=f"test_{ts}.robot"
+                fp=OUT_DIR/fn
+                with open(fp,"w",encoding="utf-8") as f: f.write(script)
+
+                await self.send({"type":"rf_script_complete","script":script,"filename":fn})
+
+            await self.send({"type":"execution_complete","total":len(self.history),"passed":passed,"failed":failed})
+            print(f"\n[Done] {passed}✓ {failed}✗ — {len(self.rf_lines)} RF lines")
+            await cli("close",self.sid,self.wd)
+
+        except Exception as e:
+            print(f"\n[Error]\n{traceback.format_exc()}")
+            await self.send({"type":"error","message":self.creds.mask(str(e))})
+
+# ─── WebSocket ────────────────────────────────────────────
+
+@app.websocket("/nlp-test/ws")
+async def ws_ep(websocket:WebSocket):
+    await websocket.accept()
+    sid=str(uuid.uuid4())[:8]
+    agent=None; task=None
+    await websocket.send_json({"type":"connected","session_id":sid})
+    print(f"\n[WS] {sid} connected")
+    try:
+        while True:
+            d=await websocket.receive_json()
+            t=d.get("type")
+            if t=="start":
+                nlp=d.get("nlp_input","").strip()
+                url=d.get("start_url","").strip()
+                usr=d.get("username","").strip()
+                pwd=d.get("password","").strip()
+                if not nlp or not url:
+                    await websocket.send_json({"type":"error","message":"URL and description required"})
+                    continue
+                print(f"\n[Start] {url}\n[Goal] {nlp}")
+                creds=Creds(usr,pwd,url)
+                agent=Agent(sid,websocket,creds)
+                task=asyncio.create_task(agent.run(nlp,url))
+            elif t=="pause" and agent: agent.paused=True; await websocket.send_json({"type":"status","message":"Paused"})
+            elif t=="resume" and agent: agent.paused=False; await websocket.send_json({"type":"status","message":"Resumed"})
+            elif t=="stop" and agent:
+                agent.stopped=True
+                if task: task.cancel()
+                await websocket.send_json({"type":"status","message":"Stopped"})
+    except WebSocketDisconnect:
+        print(f"[WS] {sid} disconnected")
+        if agent: agent.stopped=True; await cli("close",sid,str(WS_DIR/sid))
+    except: print(f"[WS Error] {traceback.format_exc()}")
+
+# ─── REST ─────────────────────────────────────────────────
+
+@app.get("/api/generated-tests")
+async def list_t():
+    fs=sorted(OUT_DIR.glob("*.robot"),key=os.path.getmtime,reverse=True)
+    return [{"filename":f.name,"created":datetime.fromtimestamp(f.stat().st_mtime).isoformat()} for f in fs]
+
+@app.get("/api/generated-tests/{fn}")
+async def dl(fn:str):
+    p=OUT_DIR/fn
+    return FileResponse(p,filename=fn) if p.exists() else {"error":"Not found"}
+
+@app.get("/api/health")
+async def health():
+    ok=False;v="?"
+    try:
+        r=subprocess.run(f"{CLI} --version",shell=True,capture_output=True,encoding="utf-8",timeout=10)
+        ok=r.returncode==0; v=r.stdout.strip() if ok else "not found"
+    except: pass
+    return {"status":"ok" if ok else "degraded","cli":v,"ai":ai.provider_display}
+
+@app.get("/")
+async def ui():
+    p=Path(__file__).parent/"index.html"
+    return HTMLResponse(p.read_text(encoding="utf-8")) if p.exists() else HTMLResponse("<h2>index.html not found</h2>")
+
+if __name__=="__main__":
+    import uvicorn
+    h,p=os.getenv("HOST","0.0.0.0"),int(os.getenv("PORT","8000"))
+    print(f"\n{'='*45}\n  NLP Test Generator v3 (Adaptive Agent)\n  AI: {ai.provider_display}\n  http://{h}:{p}\n{'='*45}\n")
+    uvicorn.run("app:app",host=h,port=p,reload=True)
+    
