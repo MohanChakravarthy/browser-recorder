@@ -1,240 +1,442 @@
-"""
-AI Service — Production-grade with credential-aware prompts.
-Supports Azure OpenAI (via openai SDK) and Google Gemini.
-"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NLP Test Generator</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box}
+        html,body,#root{height:100%;width:100%;overflow:hidden}
+        body{background:#0a0e1a;color:#e2e8f0}
+        @keyframes spin{to{transform:rotate(360deg)}}
+        @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+        @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+        @keyframes glowPulse{0%{background:rgba(34,197,94,.15)}50%{background:rgba(34,197,94,.05)}100%{background:rgba(34,197,94,0)}}
+        ::-webkit-scrollbar{width:5px}
+        ::-webkit-scrollbar-track{background:#0a0e1a}
+        ::-webkit-scrollbar-thumb{background:#1e293b;border-radius:3px}
+        input:focus,textarea:focus{border-color:#3b82f6!important;outline:none}
+        button{transition:all .12s}button:hover{filter:brightness(1.1)}button:active{transform:scale(.98)}
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs/loader.min.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const{useState,useRef,useEffect,useCallback}=React;
+const WS_BASE=`ws://${window.location.hostname||'localhost'}:${window.location.port||'8000'}`;
+const ICONS={pending:"○",running:"◉",success:"✓",failed:"✗",skipped:"⊘"};
+const COLORS={pending:"#4b5563",running:"#f59e0b",success:"#22c55e",failed:"#ef4444",skipped:"#6b7280"};
 
-import os
-import json
-import re
-from dotenv import load_dotenv
+// ─── Monaco Editor with line highlighting ────────────────
+function MonacoEditor({value,highlightLine}){
+    const cRef=useRef(null);
+    const edRef=useRef(null);
+    const monacoRef=useRef(null);
+    const decoRef=useRef([]);
 
-load_dotenv()
+    useEffect(()=>{
+        if(!cRef.current)return;
+        require.config({paths:{vs:'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs'}});
+        require(['vs/editor/editor.main'],function(monaco){
+            monacoRef.current=monaco;
 
-# ─── Prompts ──────────────────────────────────────────────────────
-
-STEP_BREAKDOWN_PROMPT = """You are a QA automation expert. Break down the user's natural language test description into precise, sequential browser actions.
-
-RULES:
-- Each step must be a single atomic browser action
-- Include assertions/verifications as separate steps
-- Use clear, specific descriptions that match what the user would see on screen
-- First step should always be navigation if a URL context is given
-- Think about what a manual tester would do step by step
-
-CREDENTIAL HANDLING:
-{credential_section}
-
-CUSTOM DROPDOWNS:
-Modern UI frameworks (MUI, Bootstrap, Angular Material) do NOT use native <select> elements. Their dropdowns require TWO steps:
-1. Click the dropdown trigger to open it
-2. Click the option from the opened list
-
-MODALS AND DIALOGS:
-After clicking a button that opens a modal/dialog, add a wait step (1-2 seconds) before interacting with modal contents.
-
-FORM SUBMISSIONS:
-After clicking submit/save/create/delete/login buttons, add a wait step (2 seconds) for the response before any assertion.
-
-OUTPUT FORMAT - respond ONLY with a valid JSON array, no markdown fences, no explanation:
-[
-  {{"step": 1, "action": "navigate", "description": "Navigate to the application", "target": "/login"}},
-  {{"step": 2, "action": "fill", "description": "Enter username", "target": "username/email field", "value": "the_username_value"}},
-  {{"step": 3, "action": "fill", "description": "Enter password", "target": "password field", "value": "the_password_value"}},
-  {{"step": 4, "action": "click", "description": "Click the Login button", "target": "Login button"}},
-  {{"step": 5, "action": "wait", "description": "Wait for login to complete", "value": "2"}},
-  {{"step": 6, "action": "assert_url", "description": "Verify redirected to dashboard", "expected": "/dashboard"}}
-]
-
-Valid actions: navigate, click, fill, select, check, uncheck, hover, press_key, upload, assert_text, assert_visible, assert_url, assert_element_count, wait
-"""
-
-CREDENTIAL_WITH = """The user has provided login credentials:
-- Username/email: {username}
-- Password: {password}
-When the test involves login or authentication, use EXACTLY these values in the fill steps.
-The "value" field for username fill must be exactly: {username}
-The "value" field for password fill must be exactly: {password}
-Do NOT skip the credential fill steps. Do NOT use placeholder values."""
-
-CREDENTIAL_WITHOUT = """No credentials were provided. If the test involves login, use descriptive placeholders like "test_user" and "test_password" as values."""
-
-PICK_ELEMENT_PROMPT = """You are a browser automation expert. Given a YAML snapshot of a web page and a step description, identify the SINGLE correct element ref to interact with.
-
-RULES:
-- Return the exact ref string (like "e15", "e42") from the snapshot
-- Consider the step description, element roles, names, labels, and surrounding context
-- If the step says "first" or mentions order, pick the first matching element
-- For login forms: textbox/input near "email"/"username" label is the username field, textbox near "password" label is the password field
-- For buttons: match by visible text or aria-label
-- If ABSOLUTELY no matching element exists, return ref as null — but try hard to find a match first
-
-CRITICAL: The ref MUST be an actual element reference from the snapshot (like "e15"). Never return "null" unless you truly cannot find any matching element.
-
-OUTPUT FORMAT - respond ONLY with valid JSON, no markdown:
-{{"ref": "e15", "confidence": "high", "reasoning": "The textbox labeled 'Email' matches the username field"}}
-"""
-
-ASSERTION_PROMPT = """You are a QA automation expert generating Robot Framework Browser library assertions.
-
-Given a YAML snapshot and an assertion step, generate the correct RF Browser assertion.
-
-AVAILABLE KEYWORDS:
-- Get Text    <locator>    ==    <expected>        (exact match)
-- Get Text    <locator>    *=    <expected>        (contains)
-- Get Url    ==    <expected>                       (exact URL)
-- Get Url    *=    <expected>                       (URL contains)
-- Get Element States    <locator>    contains    visible
-- Get Element States    <locator>    contains    enabled
-- Get Element Count    <locator>    ==    <count>
-- Get Title    ==    <expected>
-- Get Title    *=    <expected>
-
-LOCATOR PRIORITY (pick the highest available from the snapshot):
-1. [data-testid="value"]
-2. id=value (skip if auto-generated like mat-input-7, :r1:)
-3. role=type[name="value"]
-4. text=visible text
-5. [placeholder="value"]
-6. [aria-label="value"]
-7. css=meaningful-selector
-
-OUTPUT FORMAT - respond ONLY with valid JSON, no markdown:
-{{"rf_keyword": "Get Text", "locator": "[data-testid=\\"msg\\"]", "operator": "*=", "expected_value": "Welcome", "full_line": "    Get Text    [data-testid=\\"msg\\"]    *=    Welcome"}}
-"""
-
-
-# ─── Providers ────────────────────────────────────────────────────
-
-class AzureOpenAIProvider:
-    def __init__(self):
-        from openai import OpenAI
-        self.api_key = os.getenv("AZURE_OPENAI_API_KEY", "")
-        self.base_url = os.getenv("AZURE_OPENAI_BASE_URL", "")
-        self.model = os.getenv("AZURE_OPENAI_MODEL", "gpt-4o")
-        if not self.api_key:
-            raise ValueError("AZURE_OPENAI_API_KEY not set")
-        if not self.base_url:
-            raise ValueError("AZURE_OPENAI_BASE_URL not set")
-        self._client = OpenAI(api_key=self.api_key, base_url=self.base_url)
-        self._model = self.model
-
-    def call(self, system_prompt: str, user_message: str) -> str:
-        response = self._client.chat.completions.create(
-            model=self._model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_message},
-            ],
-            temperature=0.1,
-            max_tokens=4096,
-        )
-        return response.choices[0].message.content
-
-
-class GeminiProvider:
-    def __init__(self):
-        from google import genai
-        self.api_key = os.getenv("GEMINI_API_KEY", "")
-        self.model_name = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
-        if not self.api_key:
-            raise ValueError("GEMINI_API_KEY not set")
-        self._client = genai.Client(api_key=self.api_key)
-        self._model = self.model_name
-
-    def call(self, system_prompt: str, user_message: str) -> str:
-        from google.genai import types
-        response = self._client.models.generate_content(
-            model=self._model,
-            contents=user_message,
-            config=types.GenerateContentConfig(
-                system_instruction=system_prompt,
-                temperature=0.1,
-                max_output_tokens=4096,
-            ),
-        )
-        return response.text
-
-
-# ─── AI Service ───────────────────────────────────────────────────
-
-class AIService:
-    def __init__(self):
-        provider_name = os.getenv("AI_PROVIDER", "azure_openai").lower()
-        if provider_name == "azure_openai":
-            self.provider = AzureOpenAIProvider()
-            self.provider_display = "Azure OpenAI"
-        elif provider_name == "gemini":
-            self.provider = GeminiProvider()
-            self.provider_display = "Gemini"
-        else:
-            raise ValueError(f"Unknown AI_PROVIDER: '{provider_name}'. Use 'azure_openai' or 'gemini'")
-        print(f"[AI Service] Provider: {self.provider_display}")
-
-    def _clean(self, content: str) -> str:
-        content = content.strip()
-        if content.startswith("```json"):
-            content = content[7:]
-        if content.startswith("```"):
-            content = content[3:]
-        if content.endswith("```"):
-            content = content[:-3]
-        return content.strip()
-
-    def _parse_json(self, text: str, fallback=None):
-        cleaned = self._clean(text)
-        try:
-            return json.loads(cleaned)
-        except json.JSONDecodeError:
-            # Try to extract JSON from text
-            match = re.search(r"[\[{].*[\]}]", cleaned, re.DOTALL)
-            if match:
-                try:
-                    return json.loads(match.group())
-                except json.JSONDecodeError:
-                    pass
-        return fallback
-
-    async def break_into_steps(self, nlp_input: str, start_url: str,
-                                username: str = "", password: str = "") -> list[dict]:
-        """Break NLP into steps. Credentials are passed ONLY to generate correct fill values."""
-
-        if username or password:
-            cred_section = CREDENTIAL_WITH.format(
-                username=username or "not_provided",
-                password=password or "not_provided"
-            )
-        else:
-            cred_section = CREDENTIAL_WITHOUT
-
-        system_prompt = STEP_BREAKDOWN_PROMPT.format(credential_section=cred_section)
-        user_msg = f'Test description: "{nlp_input}"\nStarting URL: {start_url}'
-
-        result = self.provider.call(system_prompt, user_msg)
-        steps = self._parse_json(result)
-
-        if not steps or not isinstance(steps, list):
-            raise ValueError(f"AI returned invalid steps: {result[:300]}")
-
-        return steps
-
-    async def pick_element(self, snapshot_content: str, step: dict) -> dict:
-        user_msg = f"STEP: {json.dumps(step)}\n\nPAGE SNAPSHOT:\n{snapshot_content}"
-        result = self.provider.call(PICK_ELEMENT_PROMPT, user_msg)
-        parsed = self._parse_json(result)
-
-        if not parsed or not isinstance(parsed, dict):
-            return {"ref": None, "confidence": "low", "reasoning": "Failed to parse AI response"}
-        return parsed
-
-    async def generate_assertion(self, snapshot_content: str, step: dict) -> dict:
-        user_msg = f"ASSERTION STEP: {json.dumps(step)}\n\nPAGE SNAPSHOT:\n{snapshot_content}"
-        result = self.provider.call(ASSERTION_PROMPT, user_msg)
-        parsed = self._parse_json(result)
-
-        if not parsed or not isinstance(parsed, dict):
-            return {
-                "rf_keyword": "Log",
-                "full_line": f'    Log    MANUAL: Verify {step.get("description", "unknown")}',
+            if(!monaco.languages.getLanguages().find(l=>l.id==='robot')){
+                monaco.languages.register({id:'robot'});
+                monaco.languages.setMonarchTokensProvider('robot',{
+                    tokenizer:{root:[
+                        [/^\*\*\*.*\*\*\*/,'keyword.section'],
+                        [/\$\{[^}]+\}/,'variable'],
+                        [/\[Documentation\]|\[Setup\]|\[Teardown\]|\[Tags\]|\[Template\]/,'keyword.tag'],
+                        [/#\s*FAILED:.*$/,'error-line'],
+                        [/#\s*WARNING:.*$/,'warning-line'],
+                        [/#\s*MANUAL.*$/,'warning-line'],
+                        [/#.*$/,'comment'],
+                        [/Library|Resource|Variables|Suite Setup|Suite Teardown/,'keyword.setting'],
+                        [/\b(New Browser|New Page|Close Browser|Click|Fill Text|Get Text|Get Url|Get Element States|Get Element Count|Get Title|Wait For Elements State|Check Checkbox|Uncheck Checkbox|Select Options By|Hover|Keyboard Key|Type Text|Go To|Go Back|Reload|Sleep|Wait For Load State|Log|Take Screenshot)\b/,'support.function'],
+                        [/\b(==|!=|\*=|contains|visible|enabled|disabled|checked|hidden)\b/,'operator'],
+                        [/\b(headless=true|headless=false|chromium|firefox|webkit)\b/,'constant'],
+                        [/"[^"]*"/,'string'],
+                        [/'[^']*'/,'string'],
+                        [/SET_AT_RUNTIME/,'constant.warning'],
+                    ]}
+                });
             }
-        return parsed
-        
+
+            monaco.editor.defineTheme('nlp-dark',{
+                base:'vs-dark',inherit:true,
+                rules:[
+                    {token:'keyword.section',foreground:'60a5fa',fontStyle:'bold'},
+                    {token:'variable',foreground:'c084fc'},
+                    {token:'keyword.tag',foreground:'f472b6'},
+                    {token:'keyword.setting',foreground:'60a5fa'},
+                    {token:'support.function',foreground:'34d399',fontStyle:'bold'},
+                    {token:'comment',foreground:'4b5563',fontStyle:'italic'},
+                    {token:'string',foreground:'fbbf24'},
+                    {token:'operator',foreground:'fb923c'},
+                    {token:'constant',foreground:'f472b6'},
+                    {token:'constant.warning',foreground:'f59e0b',fontStyle:'italic'},
+                    {token:'error-line',foreground:'fca5a5',fontStyle:'italic'},
+                    {token:'warning-line',foreground:'fbbf24',fontStyle:'italic'},
+                ],
+                colors:{
+                    'editor.background':'#080c16',
+                    'editor.foreground':'#e2e8f0',
+                    'editor.lineHighlightBackground':'#1e293b30',
+                    'editorLineNumber.foreground':'#1e293b',
+                    'editorLineNumber.activeForeground':'#475569',
+                    'editor.selectionBackground':'#3b82f640',
+                    'editorCursor.foreground':'#3b82f6',
+                    'editorGutter.background':'#080c16',
+                    'scrollbarSlider.background':'#1e293b80',
+                }
+            });
+
+            edRef.current=monaco.editor.create(cRef.current,{
+                value:value||'',language:'robot',theme:'nlp-dark',readOnly:true,
+                minimap:{enabled:false},fontSize:13,lineHeight:22,
+                fontFamily:"'JetBrains Mono','Fira Code',monospace",
+                fontLigatures:true,lineNumbers:'on',scrollBeyondLastLine:false,
+                renderLineHighlight:'none',automaticLayout:true,
+                padding:{top:12,bottom:12},
+                scrollbar:{vertical:'auto',horizontal:'auto',verticalScrollbarSize:6,horizontalScrollbarSize:6},
+                overviewRulerBorder:false,hideCursorInOverviewRuler:true,contextmenu:false,wordWrap:'on',
+                renderWhitespace:'none',guides:{indentation:false},
+            });
+        });
+        return()=>{if(edRef.current){edRef.current.dispose();edRef.current=null}};
+    },[]);
+
+    // Update content
+    useEffect(()=>{
+        if(!edRef.current||value===undefined)return;
+        const model=edRef.current.getModel();
+        if(model&&model.getValue()!==value){
+            model.setValue(value);
+            const lc=model.getLineCount();
+            edRef.current.revealLine(lc);
+        }
+    },[value]);
+
+    // Highlight latest line with glow animation
+    useEffect(()=>{
+        if(!edRef.current||!monacoRef.current||!highlightLine||highlightLine<1)return;
+        const monaco=monacoRef.current;
+
+        // Remove old decorations
+        decoRef.current=edRef.current.deltaDecorations(decoRef.current,[
+            {
+                range:new monaco.Range(highlightLine,1,highlightLine,1),
+                options:{
+                    isWholeLine:true,
+                    className:'highlight-new-line',
+                    glyphMarginClassName:'highlight-glyph',
+                }
+            }
+        ]);
+
+        edRef.current.revealLineInCenter(highlightLine);
+
+        // Remove highlight after animation
+        const timer=setTimeout(()=>{
+            if(edRef.current){
+                decoRef.current=edRef.current.deltaDecorations(decoRef.current,[]);
+            }
+        },2000);
+        return()=>clearTimeout(timer);
+    },[highlightLine]);
+
+    // Inject highlight CSS once
+    useEffect(()=>{
+        if(document.getElementById('monaco-highlight-css'))return;
+        const style=document.createElement('style');
+        style.id='monaco-highlight-css';
+        style.textContent=`
+            .highlight-new-line{animation:glowPulse 2s ease-out forwards;border-left:2px solid #22c55e}
+            .highlight-glyph{background:transparent}
+        `;
+        document.head.appendChild(style);
+    },[]);
+
+    return <div ref={cRef} style={{width:'100%',height:'100%'}}/>;
+}
+
+// ─── App ─────────────────────────────────────────────────
+function App(){
+    const[connected,setConnected]=useState(false);
+    const wsRef=useRef(null);
+
+    const[nlp,setNlp]=useState("");
+    const[url,setUrl]=useState("");
+    const[user,setUser]=useState("");
+    const[pwd,setPwd]=useState("");
+    const[showCreds,setShowCreds]=useState(false);
+
+    const[running,setRunning]=useState(false);
+    const[paused,setPaused]=useState(false);
+    const[steps,setSteps]=useState([]);
+    const[statuses,setStatuses]=useState([]);
+    const[curStep,setCurStep]=useState(-1);
+    const[status,setStatus]=useState("");
+
+    const[ss,setSs]=useState(null);
+    const[rfLines,setRfLines]=useState([]);
+    const[finalScript,setFinal]=useState("");
+    const[liveScript,setLive]=useState("");
+    const[hlLine,setHlLine]=useState(0);
+    const[result,setResult]=useState(null);
+    const[copyLbl,setCopyLbl]=useState("Copy");
+
+    // Build live preview
+    useEffect(()=>{
+        if(finalScript)return;
+        if(!rfLines.length)return;
+        const lines=[
+            "*** Settings ***","Library    Browser","",
+            "*** Variables ***",
+            `\${BASE_URL}    ${url||'https://...'}`,
+            user?"${USERNAME}    SET_AT_RUNTIME":null,
+            pwd?"${PASSWORD}    SET_AT_RUNTIME":null,
+            "","*** Test Cases ***","NLP Generated Test",
+            `    [Documentation]    ${nlp.slice(0,80)}`,
+            "    New Browser    chromium    headless=true",
+            "    New Page    ${BASE_URL}","",
+            ...rfLines,"","    [Teardown]    Close Browser",
+        ].filter(l=>l!==null).join("\n");
+        setLive(lines);
+
+        // Calculate highlight line: header lines + current rf line
+        const headerCount=lines.split("\n").length-rfLines.length-1;
+        setHlLine(headerCount+rfLines.length);
+    },[rfLines,finalScript,url,nlp,user,pwd]);
+
+    // When final script arrives, highlight last meaningful line
+    useEffect(()=>{
+        if(!finalScript)return;
+        const lines=finalScript.split("\n");
+        setHlLine(lines.length-2); // line before [Teardown]
+    },[finalScript]);
+
+    const connect=useCallback(()=>{
+        if(wsRef.current?.readyState===WebSocket.OPEN)return;
+        const ws=new WebSocket(`${WS_BASE}/nlp-test/ws`);
+        wsRef.current=ws;
+        ws.onopen=()=>setConnected(true);
+        ws.onclose=()=>{setConnected(false);setRunning(false)};
+        ws.onerror=()=>setConnected(false);
+        ws.onmessage=e=>handleMsg(JSON.parse(e.data));
+    },[]);
+
+    const send=useCallback(m=>{
+        if(wsRef.current?.readyState===WebSocket.OPEN)wsRef.current.send(JSON.stringify(m));
+    },[]);
+
+    const handleMsg=useCallback(d=>{
+        switch(d.type){
+            case"connected":break;
+            case"status":setStatus(d.message);break;
+            case"steps_planned":setSteps(d.steps);setStatuses(d.steps.map(()=>"pending"));break;
+            case"step_start":
+                setCurStep(d.index);
+                setStatuses(p=>{const n=[...p];if(d.index>=0)n[d.index]="running";return n});
+                setStatus(`Step ${d.index+1}: ${d.description}`);
+                break;
+            case"step_complete":
+                if(d.screenshot_b64)setSs(d.screenshot_b64);
+                if(d.rf_line)setRfLines(p=>[...p,d.rf_line]);
+                setStatuses(p=>{const n=[...p];if(d.index>=0)n[d.index]=d.status==="skipped"?"skipped":"success";return n});
+                break;
+            case"step_failed":
+                if(d.screenshot_b64)setSs(d.screenshot_b64);
+                if(d.rf_line)setRfLines(p=>[...p,`    # FAILED: ${d.error?.slice(0,80)||'unknown'}`]);
+                setStatuses(p=>{const n=[...p];if(d.index>=0)n[d.index]="failed";return n});
+                setStatus(`✗ Step ${d.index+1}: ${d.error}`);
+                break;
+            case"rf_script_complete":setFinal(d.script);setStatus("✓ Script generated!");break;
+            case"execution_complete":setRunning(false);setResult(d);break;
+            case"error":setStatus(`Error: ${d.message}`);setRunning(false);break;
+        }
+    },[]);
+
+    useEffect(()=>{connect();return()=>wsRef.current?.close()},[connect]);
+
+    const start=()=>{
+        if(!nlp.trim()||!url.trim())return;
+        setSteps([]);setStatuses([]);setCurStep(-1);setRfLines([]);
+        setFinal("");setLive("");setSs(null);setResult(null);setHlLine(0);
+        setRunning(true);setPaused(false);
+        send({type:"start",nlp_input:nlp.trim(),start_url:url.trim(),username:user.trim(),password:pwd.trim()});
+    };
+
+    const ok=nlp.trim()&&url.trim()&&connected&&!running;
+    const script=finalScript||liveScript;
+
+    return(
+    <div style={S.box}>
+        {/* Header */}
+        <div style={S.hdr}>
+            <div style={S.hdrL}>
+                <div style={S.logo}>⚡</div>
+                <h1 style={S.h1}>NLP Test Generator</h1>
+                <div style={{...S.dot,background:connected?'#22c55e':'#ef4444'}}/>
+            </div>
+            <div style={S.hdrR}>
+                {result&&<>
+                    <span style={{...S.pill,background:'#052e16',color:'#4ade80'}}>{result.passed}✓</span>
+                    {result.failed>0&&<span style={{...S.pill,background:'#2a0a0a',color:'#fca5a5'}}>{result.failed}✗</span>}
+                </>}
+            </div>
+        </div>
+
+        {/* Inputs */}
+        <div style={S.inputs}>
+            <div style={S.row}>
+                <div style={{flex:1}}>
+                    <label style={S.lbl}>Target URL</label>
+                    <input style={S.inp} placeholder="https://your-app.com" value={url} onChange={e=>setUrl(e.target.value)} disabled={running}/>
+                </div>
+                <button style={{...S.credBtn,color:showCreds?'#3b82f6':'#4b5563'}} onClick={()=>setShowCreds(!showCreds)}>
+                    🔑 {showCreds?'Hide':'Credentials'}
+                </button>
+            </div>
+
+            {showCreds&&(
+                <div style={{...S.row,animation:'fadeIn .2s ease'}}>
+                    <div style={{flex:1}}>
+                        <label style={S.lbl}>Username / Email</label>
+                        <input style={S.inp} placeholder="user@example.com" value={user} onChange={e=>setUser(e.target.value)} disabled={running} autoComplete="off"/>
+                    </div>
+                    <div style={{flex:1}}>
+                        <label style={S.lbl}>Password</label>
+                        <input style={S.inp} type="password" placeholder="••••••••" value={pwd} onChange={e=>setPwd(e.target.value)} disabled={running} autoComplete="new-password"/>
+                    </div>
+                    <div style={S.lock}>🔒 Never sent to AI logs</div>
+                </div>
+            )}
+
+            <div style={S.row}>
+                <div style={{flex:1}}>
+                    <label style={S.lbl}>Test Description</label>
+                    <input style={S.inp} placeholder='e.g. "Login with credentials, go to orders, create new order with qty 5, verify success"'
+                        value={nlp} onChange={e=>setNlp(e.target.value)} disabled={running}
+                        onKeyDown={e=>e.key==="Enter"&&ok&&start()}/>
+                </div>
+                <div style={S.btns}>
+                    {!running?(
+                        <button style={{...S.btn,...S.btnGo,opacity:ok?1:.4}} onClick={start} disabled={!ok}>▶ Generate</button>
+                    ):(<>
+                        <button style={{...S.btn,...S.btnW}} onClick={()=>{send({type:paused?"resume":"pause"});setPaused(!paused)}}>{paused?"▶":"⏸"}</button>
+                        <button style={{...S.btn,...S.btnD}} onClick={()=>{send({type:"stop"});setRunning(false);setPaused(false)}}>■</button>
+                    </>)}
+                </div>
+            </div>
+        </div>
+
+        {/* Split */}
+        <div style={S.split}>
+            {/* Left */}
+            <div style={S.left}>
+                <div style={S.ssBox}>
+                    {ss?<img src={`data:image/png;base64,${ss}`} alt="" style={S.ssImg}/>
+                    :<div style={S.ph}><div style={{fontSize:44,opacity:.12}}>🌐</div><div style={S.phT}>Browser preview</div></div>}
+                </div>
+
+                {status&&<div style={S.stat}>{running&&<span style={S.spin}/>}{status}</div>}
+
+                {steps.length>0&&(
+                    <div style={S.stWrap}>
+                        <div style={S.stHead}>Steps {statuses.filter(s=>s==="success"||s==="skipped").length}/{steps.length}</div>
+                        <div style={S.stList}>
+                            {steps.map((s,i)=>(
+                                <div key={i} style={{...S.stRow,borderLeftColor:COLORS[statuses[i]]||COLORS.pending,background:curStep===i?'#111827':'transparent',animation:statuses[i]==="running"?"pulse 1.5s infinite":"none"}}>
+                                    <span style={{...S.stIco,color:COLORS[statuses[i]]}}>{ICONS[statuses[i]]||ICONS.pending}</span>
+                                    <span style={S.stAct}>{s.action}</span>
+                                    <span style={S.stDsc}>{s.description}</span>
+                                    {statuses[i]==="failed"&&<button style={S.retry} onClick={()=>{send({type:"retry_step",step_index:i});setStatuses(p=>{const n=[...p];n[i]="running";return n})}}>↻</button>}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            <div style={S.div}/>
+
+            {/* Right — Monaco */}
+            <div style={S.right}>
+                <div style={S.cHead}>
+                    <span style={S.cTitle}>{finalScript?'✓ Generated .robot':rfLines.length?`Building... (${rfLines.length} lines)`:'RF Browser Code'}</span>
+                    <div style={{display:'flex',gap:4}}>
+                        {script&&<>
+                            <button style={S.cBtn} onClick={()=>{navigator.clipboard.writeText(script);setCopyLbl("✓");setTimeout(()=>setCopyLbl("Copy"),2000)}}>{copyLbl}</button>
+                            <button style={S.cBtn} onClick={()=>{const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([script],{type:"text/plain"}));a.download=`test_${Date.now()}.robot`;a.click()}}>↓ .robot</button>
+                        </>}
+                    </div>
+                </div>
+                <div style={S.monaco}>
+                    {script?<MonacoEditor value={script} highlightLine={hlLine}/>
+                    :<div style={S.ph}><div style={{fontFamily:"'JetBrains Mono'",fontSize:28,opacity:.08}}>{"{ }"}</div><div style={S.phT}>Code builds here as steps execute</div></div>}
+                </div>
+            </div>
+        </div>
+    </div>
+    );
+}
+
+const S={
+    box:{width:'100%',height:'100vh',display:'flex',flexDirection:'column',background:'#0a0e1a',fontFamily:"'Inter',sans-serif",overflow:'hidden'},
+    hdr:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'7px 16px',borderBottom:'1px solid #151b2e',flexShrink:0,background:'#0d1220'},
+    hdrL:{display:'flex',alignItems:'center',gap:10},
+    hdrR:{display:'flex',gap:6},
+    logo:{fontSize:15,width:26,height:26,display:'flex',alignItems:'center',justifyContent:'center',background:'linear-gradient(135deg,#3b82f6,#8b5cf6)',borderRadius:6},
+    h1:{fontSize:13,fontWeight:700,color:'#f1f5f9',fontFamily:"'JetBrains Mono',monospace",letterSpacing:'-.02em'},
+    dot:{width:7,height:7,borderRadius:'50%'},
+    pill:{fontSize:11,padding:'2px 8px',borderRadius:99,fontWeight:600,fontFamily:"'JetBrains Mono',monospace"},
+
+    inputs:{padding:'8px 16px',borderBottom:'1px solid #151b2e',flexShrink:0,display:'flex',flexDirection:'column',gap:7,background:'#0d1220'},
+    row:{display:'flex',gap:8,alignItems:'flex-end'},
+    lbl:{display:'block',fontSize:9,color:'#4b5563',marginBottom:2,fontWeight:700,textTransform:'uppercase',letterSpacing:'.08em'},
+    inp:{width:'100%',padding:'6px 10px',fontSize:12,background:'#111827',border:'1px solid #1e293b',borderRadius:4,color:'#e2e8f0',fontFamily:"'Inter',sans-serif"},
+    credBtn:{background:'none',border:'1px solid #1e293b',borderRadius:4,padding:'6px 10px',fontSize:11,cursor:'pointer',fontFamily:"'Inter',sans-serif",whiteSpace:'nowrap',flexShrink:0},
+    lock:{fontSize:9,color:'#22c55e',whiteSpace:'nowrap',padding:'0 0 5px 0',flexShrink:0,fontWeight:700},
+    btns:{display:'flex',gap:4,flexShrink:0},
+    btn:{padding:'6px 14px',fontSize:12,fontWeight:600,border:'none',borderRadius:4,cursor:'pointer',fontFamily:"'JetBrains Mono',monospace",whiteSpace:'nowrap'},
+    btnGo:{background:'linear-gradient(135deg,#3b82f6,#2563eb)',color:'#fff',minWidth:100},
+    btnW:{background:'#f59e0b',color:'#000',minWidth:32},
+    btnD:{background:'#ef4444',color:'#fff',minWidth:32},
+
+    split:{flex:1,display:'flex',overflow:'hidden',minHeight:0},
+    div:{width:1,background:'#151b2e',flexShrink:0},
+
+    left:{flex:'0 0 58%',display:'flex',flexDirection:'column',overflow:'hidden'},
+    ssBox:{flex:'0 0 42%',padding:8,display:'flex',alignItems:'center',justifyContent:'center',background:'#070a14',borderBottom:'1px solid #151b2e',overflow:'hidden'},
+    ssImg:{maxWidth:'100%',maxHeight:'100%',objectFit:'contain',borderRadius:3,border:'1px solid #1e293b'},
+    ph:{textAlign:'center',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'100%',gap:4},
+    phT:{fontSize:11,color:'#1e293b'},
+    stat:{padding:'5px 12px',fontSize:10,color:'#94a3b8',background:'#111827',borderBottom:'1px solid #1e293b',display:'flex',alignItems:'center',gap:6,flexShrink:0,fontFamily:"'JetBrains Mono',monospace",lineHeight:1.4},
+    spin:{display:'inline-block',width:9,height:9,border:'2px solid #1e293b',borderTopColor:'#3b82f6',borderRadius:'50%',animation:'spin .7s linear infinite',flexShrink:0},
+
+    stWrap:{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'},
+    stHead:{padding:'5px 12px',fontSize:9,fontWeight:700,color:'#4b5563',textTransform:'uppercase',letterSpacing:'.06em',borderBottom:'1px solid #151b2e',flexShrink:0,fontFamily:"'JetBrains Mono',monospace"},
+    stList:{flex:1,overflowY:'auto',padding:'1px 0'},
+    stRow:{display:'flex',alignItems:'center',gap:7,padding:'3px 12px',borderLeft:'3px solid transparent'},
+    stIco:{fontSize:11,fontWeight:700,width:13,textAlign:'center',flexShrink:0,fontFamily:"'JetBrains Mono',monospace"},
+    stAct:{fontSize:8,fontWeight:700,color:'#3b82f6',textTransform:'uppercase',flexShrink:0,letterSpacing:'.04em',fontFamily:"'JetBrains Mono',monospace",minWidth:52},
+    stDsc:{fontSize:11,color:'#cbd5e1',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',flex:1,minWidth:0},
+    retry:{background:'none',border:'1px solid #374151',color:'#f59e0b',fontSize:12,cursor:'pointer',borderRadius:3,padding:'0 5px',flexShrink:0},
+
+    right:{flex:'0 0 42%',display:'flex',flexDirection:'column',overflow:'hidden'},
+    cHead:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'5px 12px',borderBottom:'1px solid #151b2e',flexShrink:0,background:'#0d1220'},
+    cTitle:{fontSize:9,fontWeight:700,color:'#4b5563',textTransform:'uppercase',letterSpacing:'.06em',fontFamily:"'JetBrains Mono',monospace"},
+    cBtn:{background:'#111827',border:'1px solid #1e293b',color:'#94a3b8',fontSize:9,padding:'2px 7px',borderRadius:3,cursor:'pointer',fontFamily:"'JetBrains Mono',monospace"},
+    monaco:{flex:1,overflow:'hidden',background:'#080c16'},
+};
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
