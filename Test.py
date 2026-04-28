@@ -115,3 +115,231 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+Build a production-grade Autonomous Web Testing Agent designed for complex enterprise web applications (SPA apps built with React, Next.js, Angular, Vue, Material UI, Tailwind CSS).
+
+The system must aim to achieve near-98% success rate through a combination of:
+- deterministic rule-based execution
+- self-learning domain knowledge generation
+- dependency-aware progressive form handling
+- workflow learning and reuse
+
+The system must NOT rely on random exploration.
+
+=====================================================
+CORE ARCHITECTURE (MANDATORY)
+=====================================================
+
+Perception → Auto Config Generator → Rule Engine → Dependency Engine → Progressive Form Engine → Workflow Engine → State Manager → Decision Engine → Execution → Evaluation → Learning Engine → Memory → Test Generation
+
+=====================================================
+1. PERCEPTION LAYER
+=====================================================
+
+- Use Playwright CLI snapshot to extract accessibility-based UI tree
+- Parse into structured elements:
+  {ref, role, label, type, required, disabled, visible, hierarchy}
+- Detect sections, forms, modals, tabs, and workflows
+
+=====================================================
+2. AUTO DOMAIN CONFIG GENERATOR (CRITICAL)
+=====================================================
+
+- Automatically infer field types from labels:
+  - email → email
+  - phone → numeric
+  - date → date
+  - name → text
+- Generate initial config dynamically (no manual input required)
+
+- Store inferred config:
+{
+  fields: {
+    "Email": { type: "email" },
+    "Phone": { type: "number" }
+  }
+}
+
+=====================================================
+3. LEARNING ENGINE (KEY FOR 98%)
+=====================================================
+
+- Learn from validation errors dynamically
+
+Example:
+Input → "123"
+Error → "Must be 10 digits"
+
+Store:
+"Phone": { pattern: "10-digit" }
+
+- Continuously refine:
+  - field formats
+  - valid values
+  - workflow paths
+
+- Persist learned knowledge for reuse
+
+=====================================================
+4. RULE ENGINE (DETERMINISTIC CORE)
+=====================================================
+
+- Always:
+  1. Fill required fields
+  2. Enable dependent fields
+  3. Complete forms before submission
+
+- Never submit incomplete or invalid forms
+
+=====================================================
+5. DEPENDENCY ENGINE
+=====================================================
+
+- Detect:
+  Field A → enables Field B → opens nested Form C
+
+- Implementation:
+  - compare snapshot before/after action
+  - track:
+    - new elements
+    - enabled fields
+    - new sections/modals
+
+=====================================================
+6. PROGRESSIVE FORM ENGINE
+=====================================================
+
+- Fill forms iteratively:
+  Fill → Observe → Unlock → Fill more
+
+- Support:
+  - nested forms (multi-level)
+  - modal forms
+  - conditional sections
+
+=====================================================
+7. WORKFLOW ENGINE
+=====================================================
+
+- Learn workflows automatically:
+  - sequence of actions leading to success
+
+- Store reusable patterns:
+  state → action → next state
+
+- Reuse successful workflows for similar pages
+
+=====================================================
+8. STATE MANAGEMENT
+=====================================================
+
+- State = hash(URL + visible UI structure)
+
+- Track:
+  - visited states
+  - actions taken
+  - progress level
+
+- Prevent loops and redundant actions
+
+=====================================================
+9. DECISION ENGINE
+=====================================================
+
+STRICT PRIORITY:
+
+1. Complete current form/workflow
+2. Fill required fields using learned config
+3. Enable next step via dependencies
+4. Execute primary actions (Submit, Next)
+5. Use AI ONLY when ambiguous
+
+AI must never override deterministic rules
+
+=====================================================
+10. EXECUTION LAYER
+=====================================================
+
+- Use Playwright CLI:
+  - click(ref)
+  - fill(ref, value)
+  - select(ref, option)
+
+- Handle:
+  - dropdowns
+  - tabs
+  - modals
+  - sliders
+  - toggles
+  - scrolling
+
+- Use event-based waits (React/MUI safe)
+
+=====================================================
+11. EVALUATION ENGINE
+=====================================================
+
+After each action:
+
+Detect:
+- progress (new elements / navigation)
+- failure (validation errors)
+- no change
+
+Respond:
+- failure → retry with improved input
+- no change → try alternative action
+- progress → continue
+
+=====================================================
+12. MEMORY LAYER
+=====================================================
+
+- Store:
+  - learned field rules
+  - workflows
+  - dependency patterns
+
+- Reuse across pages
+
+=====================================================
+13. TEST GENERATION
+=====================================================
+
+- Generate:
+  - human-readable test cases
+  - Playwright scripts
+  - coverage reports
+
+=====================================================
+14. SPA HANDLING
+=====================================================
+
+- Support:
+  React, Next.js, Angular, Vue, Material UI, Tailwind CSS
+
+- Handle:
+  - dynamic rendering
+  - re-renders
+  - lazy loading
+  - conditional UI
+
+=====================================================
+15. GOAL
+=====================================================
+
+- Achieve near 98% success rate on enterprise applications by:
+  - eliminating random behavior
+  - learning from errors
+  - reusing successful workflows
+  - adapting to dynamic UI changes
+
+=====================================================
+16. CONSTRAINTS
+=====================================================
+
+- No random input generation
+- No blind exploration
+- Must learn from failures
+- Must improve over time
