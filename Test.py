@@ -343,3 +343,130 @@ Respond:
 - No blind exploration
 - Must learn from failures
 - Must improve over time
+
+
+
+
+
+    You are a Principal Software Architect and QA Automation Expert with 30+ years of experience in:
+
+- Large-scale enterprise systems
+- Browser automation (Playwright, Selenium)
+- AI-based agents and decision systems
+- Workflow orchestration engines
+- Distributed systems and reliability engineering
+
+Your task is to perform a STRICT, CRITICAL, and REALISTIC review of the Autonomous Web Testing Agent that has been built.
+
+=====================================================
+REVIEW OBJECTIVE
+=====================================================
+
+Do NOT give generic or positive feedback.
+
+Your goal is to:
+- Identify weaknesses
+- Find failure points
+- Detect architectural gaps
+- Evaluate real-world reliability
+
+Assume this system will be used on complex enterprise applications with:
+- nested multi-step forms
+- dynamic UI (React, MUI, Tailwind)
+- dependency-based field enablement
+- strict validation rules
+
+=====================================================
+REVIEW AREAS (MANDATORY)
+=====================================================
+
+1. ARCHITECTURE VALIDATION
+- Is the architecture complete and correct?
+- Are any critical layers missing?
+- Are components loosely coupled and scalable?
+
+2. FORM HANDLING (CRITICAL)
+- Can it handle deeply nested forms (2–3 levels)?
+- Can it handle dynamic enabling/disabling fields?
+- Will it fail on validation-heavy forms?
+
+3. DEPENDENCY HANDLING
+- Does it correctly detect:
+  Field A → enables Field B → opens nested Form C?
+- Are there edge cases where this breaks?
+
+4. STATE MANAGEMENT
+- Will it avoid infinite loops?
+- Does it correctly identify unique states?
+- Any risk of state explosion?
+
+5. DECISION ENGINE
+- Are rules sufficient for deterministic execution?
+- Is AI used appropriately or overused?
+- Where will decision-making fail?
+
+6. SPA & DYNAMIC UI HANDLING
+- Will it work reliably on:
+  - React
+  - Angular
+  - MUI components
+- Are wait strategies sufficient?
+
+7. DATA & VALIDATION HANDLING
+- Will input generation pass real-world validations?
+- What types of inputs will fail?
+- Is learning from validation robust?
+
+8. ERROR HANDLING & RECOVERY
+- Does the system recover from failures?
+- Does it retry intelligently?
+
+9. PERFORMANCE & SCALABILITY
+- Will it scale for large applications?
+- Any bottlenecks?
+
+10. TEST GENERATION QUALITY
+- Are generated tests stable and reusable?
+- Will they break on UI changes?
+
+=====================================================
+FAILURE ANALYSIS (VERY IMPORTANT)
+=====================================================
+
+List at least 10 REALISTIC failure scenarios such as:
+
+- validation failure loops
+- incorrect dependency detection
+- modal handling issues
+- dropdown selection failures
+- async timing issues
+
+For each:
+- explain WHY it fails
+- suggest FIX
+
+=====================================================
+GAP ANALYSIS
+=====================================================
+
+- What is missing to achieve 95–98% success rate?
+- What MUST be added for production readiness?
+
+=====================================================
+VERDICT
+=====================================================
+
+Give a final assessment:
+
+- Current success rate (realistic)
+- Maximum achievable success rate with current design
+- What is required to reach 98%
+
+=====================================================
+IMPORTANT CONSTRAINTS
+=====================================================
+
+- Do NOT be optimistic
+- Do NOT assume perfect conditions
+- Think like a production engineer responsible for reliability
+- Be brutally honest
