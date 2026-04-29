@@ -1,0 +1,151 @@
+Enhance the Autonomous Web Testing Agent with a Human-like Form Intelligence Engine.
+
+The system must NOT perform naive or random form filling. It must behave like a human user by understanding context, dependencies, and validation requirements.
+
+=====================================================
+1. CONTEXT-AWARE DATA GENERATION (CRITICAL)
+=====================================================
+
+- Generate realistic and valid input values based on field label, type, and context
+
+Examples:
+- "Email" → valid email (test.user@company.com)
+- "Phone" → 10-digit number
+- "Date of Birth" → valid date
+- "Name" → realistic text
+- "Amount" → valid numeric range
+
+- Do NOT use generic placeholders like "test" or "123"
+- Prefer domain-relevant values
+
+- If validation fails:
+  - detect error message
+  - adjust input accordingly
+  - retry with corrected value
+
+=====================================================
+2. DEPENDENCY-AWARE FORM HANDLING (CRITICAL)
+=====================================================
+
+- Detect relationships between fields:
+
+Example:
+Field A → enables Field B → enables Button C → opens nested Form D
+
+- Implementation:
+  1. Capture snapshot BEFORE action
+  2. Perform action (fill/select)
+  3. Capture snapshot AFTER action
+  4. Compare:
+     - newly enabled fields
+     - newly visible sections
+     - new dropdown options
+
+- Build dependency map dynamically
+
+=====================================================
+3. PROGRESSIVE FORM FILLING (HUMAN-LIKE)
+=====================================================
+
+- DO NOT fill all fields at once
+
+Use iterative strategy:
+
+Loop:
+1. Fill currently visible & enabled fields
+2. Observe UI changes
+3. Detect newly enabled fields
+4. Fill them
+5. Repeat until form is complete
+
+- Mimic real user behavior:
+  - fill → pause → observe → continue
+
+=====================================================
+4. ADVANCED ELEMENT HANDLING
+=====================================================
+
+Support all interactive UI elements:
+
+- textbox → fill
+- dropdown → open → select valid option
+- checkbox → toggle
+- radio → select
+- slider → set value
+- date picker → choose valid date
+- tabs → switch context
+- sections → expand/collapse
+
+- For dropdowns:
+  - always select a VALID option from available list
+  - do not guess values
+
+=====================================================
+5. NESTED FORM HANDLING
+=====================================================
+
+- Detect when new form appears:
+  - modal
+  - section expansion
+  - step-based wizard
+
+- Treat each nested form as a new context
+
+- Apply same logic recursively:
+  - progressive filling
+  - dependency detection
+  - validation handling
+
+=====================================================
+6. VALIDATION-AWARE EXECUTION
+=====================================================
+
+- After each input:
+  - check for validation errors
+  - detect error messages
+
+If error:
+  - modify input
+  - retry intelligently
+
+- Never proceed if form is invalid
+
+=====================================================
+7. HUMAN-LIKE DECISION LOGIC
+=====================================================
+
+Agent must think like:
+
+"If I fill this field, what might unlock next?"
+
+Decision order:
+1. Fill required fields
+2. Observe changes
+3. Fill newly enabled fields
+4. Repeat until submission possible
+
+=====================================================
+8. SCROLL & VISIBILITY HANDLING
+=====================================================
+
+- Ensure all fields are discovered:
+  - scroll to reveal hidden fields
+  - handle lazy-loaded sections
+
+=====================================================
+9. SAFETY
+=====================================================
+
+- Avoid destructive actions (delete, reset)
+- Do not submit incomplete forms
+
+=====================================================
+10. GOAL
+=====================================================
+
+- Achieve human-like interaction with complex forms
+- Handle:
+  - multi-step forms
+  - nested forms
+  - dynamic enable/disable logic
+- Maximize success rate on enterprise applications
