@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Robot Framework — Post-Execution Executive Test Report</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Plus+Jakarta+Sans:wght@500;600;700;800&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "surface-dim": "#f1f5f9",
+            "surface": "#f8fafc",
+            "surface-container-lowest": "#ffffff",
+            "surface-container-low": "#f8fafc",
+            "surface-container": "#f1f5f9",
+            "surface-container-high": "#e2e8f0",
+            "surface-container-highest": "#cbd5e1",
+            "on-surface": "#0f172a",
+            "on-surface-variant": "#475569",
+            "outline": "#64748b",
+            "outline-variant": "#cbd5e1",
+            "primary": "#2563eb",
+            "primary-container": "#1d4ed8",
+            "on-primary": "#ffffff",
+            "on-primary-container": "#eff6ff",
+            "tertiary": "#059669",
+            "tertiary-container": "#ecfdf5",
+            "on-tertiary-container": "#065f46",
+            "error": "#dc2626",
+            "error-container": "#fef2f2",
+            "on-error-container": "#991b1b",
+            "warning": "#d97706",
+            "warning-container": "#fffbeb",
+            "on-warning-container": "#92400e",
+            "secondary": "#475569"
+          },
+          fontFamily: {
+            "display-lg": ["Plus Jakarta Sans", "sans-serif"],
+            "headline-xl": ["Plus Jakarta Sans", "sans-serif"],
+            "headline-lg": ["Plus Jakarta Sans", "sans-serif"],
+            "headline-md": ["Plus Jakarta Sans", "sans-serif"],
+            "body-lg": ["Inter", "sans-serif"],
+            "body-md": ["Inter", "sans-serif"],
+            "body-sm": ["Inter", "sans-serif"],
+            "label-md": ["Inter", "sans-serif"],
+            "label-sm": ["Inter", "sans-serif"],
+            "code-metric": ["JetBrains Mono", "monospace"],
+            "code-meta": ["JetBrains Mono", "monospace"]
+          },
+          borderRadius: {
+            "DEFAULT": "0.25rem",
+            "lg": "0.375rem",
+            "xl": "0.75rem",
+            "2xl": "1rem",
+            "full": "9999px"
+          }
+        }
+      }
+    };
+  </script>
+<style>
+    @layer base {
+      html, body {
+        margin: 0;
+        padding: 0;
+        background-color: #f8fafc;
+        color: #0f172a;
+      }
+    }
+  </style>
+</head>
+<body class="bg-[#f8fafc] font-body-md text-slate-800 antialiased min-h-screen selection:bg-blue-100 selection:text-blue-900">
+<!-- Light Executive Top Navigation Chrome -->
+<header class="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-slate-200 shadow-sm">
+<div class="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8">
+<div class="h-20 flex items-center justify-between gap-4">
+<!-- Brand & Run Context Badges -->
+<div class="flex items-center gap-3.5 min-w-0">
+<div class="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white shadow-sm shadow-blue-500/20 flex-shrink-0">
+<span class="material-symbols-outlined text-[24px]">robot_2</span>
+</div>
+<div class="flex flex-col min-w-0">
+<div class="flex items-center gap-2.5 flex-wrap">
+<span class="font-headline-md text-base sm:text-lg text-slate-900 font-bold tracking-tight">Robot Framework</span>
+<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-label-sm text-xs font-semibold border border-emerald-200">
+<span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                COMPLETED — PASS RATE: 97.2%
+              </span>
+</div>
+<div class="flex items-center gap-2 text-xs text-slate-500 font-code-meta truncate">
+<span class="font-semibold text-slate-700">#RUN-2025-0314-NIGHTLY</span>
+<span>•</span>
+<span class="text-slate-600 font-body-sm">Scheduled Nightly Regression</span>
+<span class="hidden md:inline">•</span>
+<span class="hidden md:inline text-slate-500">v7.1.1 (Pabot Parallel x16)</span>
+</div>
+</div>
+</div>
+<!-- Action Buttons Group -->
+<div class="flex items-center gap-2 sm:gap-2.5 flex-shrink-0">
+<button class="hidden md:inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold transition shadow-sm" onclick="navigator.clipboard?.writeText(window.location.href); alert('Permalink copied to clipboard!');" type="button">
+<span class="material-symbols-outlined text-[17px] text-slate-500">forward_to_inbox</span>
+<span>Email / Slack Summary</span>
+</button>
+<button class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold transition shadow-sm" type="button">
+<span class="material-symbols-outlined text-[17px] text-slate-500">file_download</span>
+<span class="hidden sm:inline">Download Standalone HTML</span>
+<span class="sm:hidden">Export</span>
+</button>
+<a class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition shadow-sm shadow-blue-600/20" href="#log-artifacts">
+<span class="material-symbols-outlined text-[17px]">open_in_new</span>
+<span>View log.html</span>
+</a>
+</div>
+</div>
+</div>
+</header>
+<!-- Main Content Viewport -->
+<main class="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col gap-7">
+<!-- Project & Run Metadata Hero Banner -->
+<section class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 lg:p-7 flex flex-col gap-6 relative overflow-hidden">
+<!-- Subtle top tint decorator line -->
+<div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-600 via-emerald-500 to-indigo-500"></div>
+<div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+<div>
+<div class="flex items-center gap-2 mb-1.5">
+<span class="text-xs uppercase tracking-wider font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100">Project Phoenix</span>
+<span class="text-slate-300">•</span>
+<span class="text-xs text-slate-500 font-medium">Core Checkout Services</span>
+</div>
+<h1 class="font-display-lg text-2xl sm:text-3xl text-slate-900 font-extrabold tracking-tight">
+            Checkout &amp; Core Banking API
+          </h1>
+<p class="text-sm text-slate-600 mt-1 max-w-2xl">
+            Automated regression suite across payment gateways, customer authentication, KYC compliance, and Kafka event streaming consumers.
+          </p>
+</div>
+<!-- High-level Pass Callout Box -->
+<div class="flex items-center gap-4 bg-slate-50 border border-slate-200 rounded-xl p-3.5 sm:px-5 sm:py-3.5 self-start lg:self-center">
+<div class="w-12 h-12 rounded-xl bg-emerald-100 border border-emerald-200 flex items-center justify-center text-emerald-700 font-extrabold flex-shrink-0">
+<span class="material-symbols-outlined text-[28px]">check_circle</span>
+</div>
+<div>
+<div class="text-xs font-semibold uppercase tracking-wider text-slate-500">Quality Gate Status</div>
+<div class="flex items-baseline gap-1.5">
+<span class="font-display-lg text-2xl font-bold text-slate-900">97.2%</span>
+<span class="text-xs font-semibold text-emerald-600">Passed</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Run Parameters Bar -->
+<div class="grid grid-cols-2 md:grid-cols-4 gap-4 pt-5 border-t border-slate-100">
+<div class="flex items-start gap-2.5">
+<span class="material-symbols-outlined text-slate-400 text-[20px] mt-0.5">schedule</span>
+<div>
+<span class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">Execution Window</span>
+<span class="font-code-meta text-xs font-semibold text-slate-800">02:00:14 → 02:24:42 UTC</span>
+</div>
+</div>
+<div class="flex items-start gap-2.5">
+<span class="material-symbols-outlined text-slate-400 text-[20px] mt-0.5">timer</span>
+<div>
+<span class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">Total Elapsed Time</span>
+<span class="font-code-meta text-xs font-semibold text-slate-800">24m 28s <span class="font-normal text-slate-500">(16 workers)</span></span>
+</div>
+</div>
+<div class="flex items-start gap-2.5">
+<span class="material-symbols-outlined text-slate-400 text-[20px] mt-0.5">dns</span>
+<div>
+<span class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">Target Environment</span>
+<span class="font-code-meta text-xs font-semibold text-slate-800">Staging-EU-West <span class="text-slate-500">v3.18.2</span></span>
+</div>
+</div>
+<div class="flex items-start gap-2.5">
+<span class="material-symbols-outlined text-slate-400 text-[20px] mt-0.5">rocket_launch</span>
+<div>
+<span class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">Trigger &amp; Runner</span>
+<span class="font-code-meta text-xs font-semibold text-slate-800">Cron (GitHub Actions)</span>
+</div>
+</div>
+</div>
+</section>
+<!-- High-Level KPI Overview: 5 Clean Airy Metric Cards -->
+<section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+<!-- Total Scheduled -->
+<div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:border-slate-300 transition">
+<div class="flex items-center justify-between">
+<span class="text-xs font-semibold uppercase tracking-wider text-slate-500">Total Scheduled</span>
+<span class="material-symbols-outlined text-slate-400 text-[20px]">assignment</span>
+</div>
+<div class="my-3">
+<div class="font-code-metric text-3xl font-bold text-slate-900 tracking-tight">1,650</div>
+<div class="text-xs text-slate-500 mt-1 font-medium">100% test scope executed</div>
+</div>
+<div class="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+<div class="bg-blue-600 h-full w-full rounded-full"></div>
+</div>
+</div>
+<!-- Passed Tests -->
+<div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:border-emerald-200 transition">
+<div class="flex items-center justify-between">
+<span class="text-xs font-semibold uppercase tracking-wider text-slate-500">Passed Tests</span>
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-semibold border border-emerald-100">
+<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Healthy
+          </span>
+</div>
+<div class="my-3">
+<div class="font-code-metric text-3xl font-bold text-emerald-600 tracking-tight">1,604</div>
+<div class="text-xs text-emerald-700 mt-1 font-medium">97.2% success rate (+0.4% sprint)</div>
+</div>
+<div class="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+<div class="bg-emerald-500 h-full w-[97.2%] rounded-full"></div>
+</div>
+</div>
+<!-- Failed Tests -->
+<div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:border-red-200 transition">
+<div class="flex items-center justify-between">
+<span class="text-xs font-semibold uppercase tracking-wider text-slate-500">Failed Tests</span>
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-50 text-red-700 text-[11px] font-semibold border border-red-100">
+            Action Required
+          </span>
+</div>
+<div class="my-3">
+<div class="font-code-metric text-3xl font-bold text-red-600 tracking-tight">12</div>
+<div class="text-xs text-red-600 mt-1 font-medium">0.7% regression rate (3 suites)</div>
+</div>
+<div class="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+<div class="bg-red-500 h-full w-[15%] rounded-full"></div>
+</div>
+</div>
+<!-- Skipped / Quarantined -->
+<div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:border-amber-200 transition">
+<div class="flex items-center justify-between">
+<span class="text-xs font-semibold uppercase tracking-wider text-slate-500">Skipped / Quarantined</span>
+<span class="material-symbols-outlined text-amber-500 text-[20px]">pause_circle</span>
+</div>
+<div class="my-3">
+<div class="font-code-metric text-3xl font-bold text-amber-600 tracking-tight">34</div>
+<div class="text-xs text-amber-700 mt-1 font-medium">2.1% flagged in test plan</div>
+</div>
+<div class="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+<div class="bg-amber-400 h-full w-[2.1%] rounded-full"></div>
+</div>
+</div>
+<!-- Speedup & Efficiency -->
+<div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:border-blue-200 transition">
+<div class="flex items-center justify-between">
+<span class="text-xs font-semibold uppercase tracking-wider text-slate-500">Parallel Speedup</span>
+<span class="material-symbols-outlined text-blue-600 text-[20px]">speed</span>
+</div>
+<div class="my-3">
+<div class="font-code-metric text-3xl font-bold text-slate-900 tracking-tight">24m 28s</div>
+<div class="text-xs text-slate-500 mt-1 font-medium">Avg: 890ms • Pabot 16 Workers</div>
+</div>
+<div class="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+<div class="bg-blue-600 h-full w-[88%] rounded-full"></div>
+</div>
+</div>
+</section>
+<!-- Execution Status Distribution Visual Segment Bar -->
+<section class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col gap-4">
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+<div>
+<h2 class="font-headline-lg text-base sm:text-lg font-bold text-slate-900">Execution Status Composition</h2>
+<p class="text-xs text-slate-500">Proportional outcome across all distributed test cases</p>
+</div>
+<div class="flex flex-wrap items-center gap-4 text-xs font-medium">
+<div class="flex items-center gap-1.5">
+<span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+<span class="text-slate-700"><strong>1,604</strong> Passed (97.2%)</span>
+</div>
+<div class="flex items-center gap-1.5">
+<span class="w-2.5 h-2.5 rounded-full bg-red-500"></span>
+<span class="text-slate-700"><strong>12</strong> Failed (0.7%)</span>
+</div>
+<div class="flex items-center gap-1.5">
+<span class="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
+<span class="text-slate-700"><strong>34</strong> Skipped (2.1%)</span>
+</div>
+</div>
+</div>
+<!-- Segmented Bar -->
+<div class="w-full h-3 rounded-full bg-slate-100 overflow-hidden flex shadow-inner">
+<div class="bg-emerald-500 h-full transition-all" style="width: 97.2%" title="Passed: 1,604 (97.2%)"></div>
+<div class="bg-red-500 h-full transition-all" style="width: 0.7%" title="Failed: 12 (0.7%)"></div>
+<div class="bg-amber-400 h-full transition-all" style="width: 2.1%" title="Skipped: 34 (2.1%)"></div>
+</div>
+</section>
+<!-- Test Suites Execution Breakdown Section -->
+<section class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+<div class="p-6 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+<div>
+<h2 class="font-headline-lg text-lg font-bold text-slate-900">Test Execution by Feature Suite</h2>
+<p class="text-xs text-slate-500 mt-0.5">Performance and outcome metrics across 5 subsystem test bundles</p>
+</div>
+<div class="flex items-center gap-2 self-start sm:self-center">
+<span class="text-xs font-code-meta text-slate-500 bg-slate-100 px-3 py-1 rounded-full font-medium">5 Suites Active</span>
+</div>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left text-sm">
+<thead>
+<tr class="bg-slate-50/80 text-slate-500 text-[11px] uppercase tracking-wider font-semibold border-b border-slate-200">
+<th class="py-3 px-6">Suite / Feature Domain</th>
+<th class="py-3 px-4 text-center">Total</th>
+<th class="py-3 px-4 text-center">Passed</th>
+<th class="py-3 px-4 text-center">Failed</th>
+<th class="py-3 px-4 text-center">Skipped</th>
+<th class="py-3 px-4 text-right">Duration</th>
+<th class="py-3 px-6 text-right">Health &amp; Status</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-slate-100">
+<!-- Suite 1 -->
+<tr class="hover:bg-slate-50/60 transition">
+<td class="py-4 px-6">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center flex-shrink-0 border border-emerald-100">
+<span class="material-symbols-outlined text-[18px]">verified_user</span>
+</div>
+<div>
+<div class="font-semibold text-slate-900">Authentication &amp; OAuth2</div>
+<span class="font-code-meta text-xs text-slate-400">tests/auth/oauth2.robot</span>
+</div>
+</div>
+</td>
+<td class="py-4 px-4 text-center font-code-meta text-xs font-medium text-slate-700">210</td>
+<td class="py-4 px-4 text-center font-code-meta text-xs font-semibold text-emerald-600">210</td>
+<td class="py-4 px-4 text-center font-code-meta text-xs text-slate-400">0</td>
+<td class="py-4 px-4 text-center font-code-meta text-xs text-slate-400">0</td>
+<td class="py-4 px-4 text-right font-code-meta text-xs text-slate-600">2m 14s</td>
+<td class="py-4 px-6 text-right">
+<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-semibold border border-emerald-100">
+<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> 100.0% Pass
+                </span>
+</td>
+</tr>
+<!-- Suite 2 -->
+<tr class="hover:bg-slate-50/60 transition bg-red-50/10">
+<td class="py-4 px-6">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-lg bg-red-50 text-red-600 flex items-center justify-center flex-shrink-0 border border-red-100">
+<span class="material-symbols-outlined text-[18px]">credit_card</span>
+</div>
+<div>
+<div class="font-semibold text-slate-900">Payment Gateway &amp; 3D Secure</div>
+<span class="font-code-meta text-xs text-slate-400">tests/checkout/payment_gateway.robot</span>
+</div>
+</div>
+</td>
+<td class="py-4 px-4 text-center font-code-meta text-xs font-medium text-slate-700">340</td>
+<td class="py-4 px-4 text-center font-code-meta text-xs font-semibold text-emerald-600">332</td>
+<td class="py-4 px-4 text-center font-code-meta text-xs font-bold text-red-600">6</td>
+<td class="py-4 px-4 text-center font-code-meta text-xs text-amber-600">2</td>
+<td class="py-4 px-4 text-right font-code-meta text-xs text-slate-600">6m 40s</td>
+<td class="py-4 px-6 text-right">
+<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-red-50 text-red-700 text-xs font-semibold border border-red-200">
+<span class="w-1.5 h-1.5 rounded-full bg-red-500"></span> 97.6% Pass
+                </span>
+</td>
+</tr>
+<!-- Suite 3 -->
+<tr class="hover:bg-slate-50/60 transition bg-red-50/10">
+<td class="py-4 px-6">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-lg bg-red-50 text-red-600 flex items-center justify-center flex-shrink-0 border border-red-100">
+<span class="material-symbols-outlined text-[18px]">badge</span>
+</div>
+<div>
+<div class="font-semibold text-slate-900">Customer Accounts &amp; KYC</div>
+<span class="font-code-meta text-xs text-slate-400">tests/accounts/kyc_workflow.robot</span>
+</div>
+</div>
+</td>
+<td class="py-4 px-4 text-center font-code-meta text-xs font-medium text-slate-700">180</td>
+<td class="py-4 px-4 text-center font-code-meta text-xs font-semibold text-emerald-600">178</td>
+<td class="py-4 px-4 text-center font-code-meta text-xs font-bold text-red-600">2</td>
+<td class="py-4 px-4 text-center font-code-meta text-xs text-slate-400">0</td>
+<td class="py-4 px-4 text-right font-code-meta text-xs text-slate-600">3m 10s</td>
+<td class="py-4 px-6 text-right">
+<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-red-50 text-red-700 text-xs font-semibold border border-red-200">
+<span class="w-1.5 h-1.5 rounded-full bg-red-500"></span> 98.9% Pass
+                </span>
+</td>
+</tr>
+<!-- Suite 4 -->
+<tr class="hover:bg-slate-50/60 transition bg-red-50/10">
+<td class="py-4 px-6">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-lg bg-red-50 text-red-600 flex items-center justify-center flex-shrink-0 border border-red-100">
+<span class="material-symbols-outlined text-[18px]">account_balance</span>
+</div>
+<div>
+<div class="font-semibold text-slate-900">Transaction Ledger &amp; Kafka Events</div>
+<span class="font-code-meta text-xs text-slate-400">tests/ledger/kafka_consumer.robot</span>
+</div>
+</div>
+</td>
+<td class="py-4 px-4 text-center font-code-meta text-xs font-medium text-slate-700">420</td>
+<td class="py-4 px-4 text-center font-code-meta text-xs font-semibold text-emerald-600">416</td>
+<td class="py-4 px-4 text-center font-code-meta text-xs font-bold text-red-600">4</td>
+<td class="py-4 px-4 text-center font-code-meta text-xs text-slate-400">0</td>
+<td class="py-4 px-4 text-right font-code-meta text-xs text-slate-600">5m 22s</td>
+<td class="py-4 px-6 text-right">
+<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-red-50 text-red-700 text-xs font-semibold border border-red-200">
+<span class="w-1.5 h-1.5 rounded-full bg-red-500"></span> 99.0% Pass
+                </span>
+</td>
+</tr>
+<!-- Suite 5 -->
+<tr class="hover:bg-slate-50/60 transition">
+<td class="py-4 px-6">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center flex-shrink-0 border border-emerald-100">
+<span class="material-symbols-outlined text-[18px]">receipt_long</span>
+</div>
+<div>
+<div class="font-semibold text-slate-900">Reports, Tax &amp; Reconciliation</div>
+<span class="font-code-meta text-xs text-slate-400">tests/finance/reconcile.robot</span>
+</div>
+</div>
+</td>
+<td class="py-4 px-4 text-center font-code-meta text-xs font-medium text-slate-700">500</td>
+<td class="py-4 px-4 text-center font-code-meta text-xs font-semibold text-emerald-600">468</td>
+<td class="py-4 px-4 text-center font-code-meta text-xs text-slate-400">0</td>
+<td class="py-4 px-4 text-center font-code-meta text-xs text-amber-600">32</td>
+<td class="py-4 px-4 text-right font-code-meta text-xs text-slate-600">7m 02s</td>
+<td class="py-4 px-6 text-right">
+<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-semibold border border-emerald-100">
+<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> 100.0% Pass
+                </span>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<!-- Failed Test Cases Triage Section (Executive Friendly & Crisp) -->
+<section class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 lg:p-7 flex flex-col gap-6">
+<!-- Section Header with Filter Controls -->
+<div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+<div>
+<div class="flex items-center gap-2">
+<span class="w-2.5 h-2.5 rounded-full bg-red-500"></span>
+<h2 class="font-headline-lg text-lg sm:text-xl font-bold text-slate-900">Failed Test Cases (12 Regressions)</h2>
+<span class="px-2.5 py-0.5 rounded-full bg-red-100 text-red-700 text-xs font-semibold">Triage Queue</span>
+</div>
+<p class="text-xs text-slate-500 mt-1">Identified failures requiring engineering review, triage, or bug filing.</p>
+</div>
+<!-- Filter & Search Controls -->
+<div class="flex flex-wrap items-center gap-2">
+<div class="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1 text-xs font-medium">
+<button class="px-3 py-1 rounded-md bg-white text-slate-900 shadow-sm font-semibold" type="button">All Suites (12)</button>
+<button class="px-3 py-1 rounded-md text-slate-600 hover:text-slate-900" type="button">Only Critical (8)</button>
+<button class="px-3 py-1 rounded-md text-slate-600 hover:text-slate-900" type="button">Payment (6)</button>
+</div>
+<div class="relative">
+<span class="material-symbols-outlined absolute left-2.5 top-2 text-slate-400 text-[18px]">search</span>
+<input class="pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500 w-44" placeholder="Filter by tag..." type="text"/>
+</div>
+</div>
+</div>
+<!-- Failure Cards List -->
+<div class="flex flex-col gap-4">
+<!-- Failure Item 1 -->
+<div class="p-5 rounded-xl border border-red-200 bg-red-50/20 flex flex-col gap-3.5 hover:shadow-sm transition">
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+<div class="flex items-center gap-2 flex-wrap">
+<span class="px-2 py-0.5 rounded bg-red-600 text-white font-code-meta text-[11px] font-bold">FAIL</span>
+<span class="font-code-meta font-bold text-slate-900 text-sm">TC-PAY-042</span>
+<span class="font-medium text-slate-800 text-sm">Verify Stripe 3DS Payment Authorization Callback with SCA</span>
+</div>
+<div class="flex items-center gap-2 text-xs font-code-meta text-slate-500">
+<span>Duration: 14.8s</span>
+<span>•</span>
+<span class="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-medium">@payments-squad</span>
+</div>
+</div>
+<!-- Tags & Suite Path -->
+<div class="flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
+<span class="text-slate-600 font-code-meta text-[11px]">checkout/payment_gateway.robot</span>
+<span class="text-slate-300">•</span>
+<span class="px-2 py-0.5 rounded bg-red-100 text-red-700 font-code-meta text-[11px] font-semibold">@critical</span>
+<span class="px-2 py-0.5 rounded bg-slate-100 text-slate-600 font-code-meta text-[11px]">@payment</span>
+<span class="px-2 py-0.5 rounded bg-slate-100 text-slate-600 font-code-meta text-[11px]">@regression</span>
+</div>
+<!-- Clean Monospace Error Snippet -->
+<div class="bg-white border border-red-200 rounded-lg p-3 text-xs font-code-meta text-red-700 overflow-x-auto shadow-sm">
+<span class="font-bold">ElementNotFoundError:</span> Button [data-test='3ds-complete-btn'] was not found within 10.0s timeout.
+          </div>
+<!-- Trace Accordion -->
+<details class="group">
+<summary class="cursor-pointer text-xs font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-1 select-none">
+<span class="material-symbols-outlined text-[16px] group-open:rotate-90 transition-transform">chevron_right</span>
+<span>View Robot Execution Call Stack &amp; Captured Screenshot</span>
+</summary>
+<div class="mt-2.5 p-3.5 rounded-lg bg-slate-50 border border-slate-200 text-xs font-code-meta text-slate-700 space-y-1 overflow-x-auto">
+<div>Traceback (most recent call last):</div>
+<div>  File "checkout/payment_gateway.robot", line 84, in Authorize 3DS Flow</div>
+<div>  File "Browser/keywords/interaction.py", line 192, in wait_for_elements_state</div>
+<div class="text-red-600">  Error: Page.wait_for_selector: Timeout 10000ms exceeded.</div>
+<div>  Target: //button[@data-test='3ds-complete-btn']</div>
+<div class="pt-2 text-slate-500 font-medium">Captured Artifact: <a class="text-blue-600 underline font-semibold hover:text-blue-800" href="#">screenshot_TC-PAY-042_fail.png (142 KB)</a></div>
+</div>
+</details>
+<div class="flex items-center justify-between pt-2 border-t border-red-100 text-xs">
+<span class="text-slate-500">Linked Jira Issue:</span>
+<a class="inline-flex items-center gap-1 font-code-meta text-blue-600 font-bold hover:underline" href="#">
+<span>PAY-4891</span>
+<span class="material-symbols-outlined text-[13px]">launch</span>
+</a>
+</div>
+</div>
+<!-- Failure Item 2 -->
+<div class="p-5 rounded-xl border border-red-200 bg-red-50/20 flex flex-col gap-3.5 hover:shadow-sm transition">
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+<div class="flex items-center gap-2 flex-wrap">
+<span class="px-2 py-0.5 rounded bg-red-600 text-white font-code-meta text-[11px] font-bold">FAIL</span>
+<span class="font-code-meta font-bold text-slate-900 text-sm">TC-AUTH-115</span>
+<span class="font-medium text-slate-800 text-sm">Refresh Expired Access Token using Valid Refresh Token</span>
+</div>
+<div class="flex items-center gap-2 text-xs font-code-meta text-slate-500">
+<span>Duration: 1.2s</span>
+<span>•</span>
+<span class="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-medium">@identity-core</span>
+</div>
+</div>
+<div class="flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
+<span class="text-slate-600 font-code-meta text-[11px]">auth/token_refresh.robot</span>
+<span class="text-slate-300">•</span>
+<span class="px-2 py-0.5 rounded bg-red-100 text-red-700 font-code-meta text-[11px] font-semibold">@auth</span>
+<span class="px-2 py-0.5 rounded bg-slate-100 text-slate-600 font-code-meta text-[11px]">@security</span>
+</div>
+<div class="bg-white border border-red-200 rounded-lg p-3 text-xs font-code-meta text-red-700 overflow-x-auto shadow-sm">
+<span class="font-bold">HTTPStatusError:</span> Expected 200 OK but received 401 Unauthorized (Token signature invalidated).
+          </div>
+<details class="group">
+<summary class="cursor-pointer text-xs font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-1 select-none">
+<span class="material-symbols-outlined text-[16px] group-open:rotate-90 transition-transform">chevron_right</span>
+<span>View Robot Execution Call Stack</span>
+</summary>
+<div class="mt-2.5 p-3.5 rounded-lg bg-slate-50 border border-slate-200 text-xs font-code-meta text-slate-700 space-y-1 overflow-x-auto">
+<div>Traceback (most recent call last):</div>
+<div>  File "auth/token_refresh.robot", line 42, in Request Token Pair</div>
+<div>  Response Headers: {'x-request-id': 'req-9883f-02', 'content-type': 'application/json'}</div>
+<div class="text-red-600">  Response Payload: {"error": "invalid_grant", "error_description": "RSA key mismatch on rotation"}</div>
+</div>
+</details>
+<div class="flex items-center justify-between pt-2 border-t border-red-100 text-xs">
+<span class="text-slate-500">Linked Jira Issue:</span>
+<a class="inline-flex items-center gap-1 font-code-meta text-blue-600 font-bold hover:underline" href="#">
+<span>AUTH-2104</span>
+<span class="material-symbols-outlined text-[13px]">launch</span>
+</a>
+</div>
+</div>
+<!-- Failure Item 3 -->
+<div class="p-5 rounded-xl border border-red-200 bg-red-50/20 flex flex-col gap-3.5 hover:shadow-sm transition">
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+<div class="flex items-center gap-2 flex-wrap">
+<span class="px-2 py-0.5 rounded bg-red-600 text-white font-code-meta text-[11px] font-bold">FAIL</span>
+<span class="font-code-meta font-bold text-slate-900 text-sm">TC-TXN-089</span>
+<span class="font-medium text-slate-800 text-sm">Event Stream Consumer Offset Sync on High Volume Batches</span>
+</div>
+<div class="flex items-center gap-2 text-xs font-code-meta text-slate-500">
+<span>Duration: 22.4s</span>
+<span>•</span>
+<span class="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-medium">@data-platform</span>
+</div>
+</div>
+<div class="flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
+<span class="text-slate-600 font-code-meta text-[11px]">kafka/ledger_sync.robot</span>
+<span class="text-slate-300">•</span>
+<span class="px-2 py-0.5 rounded bg-red-100 text-red-700 font-code-meta text-[11px] font-semibold">@kafka</span>
+<span class="px-2 py-0.5 rounded bg-slate-100 text-slate-600 font-code-meta text-[11px]">@data</span>
+</div>
+<div class="bg-white border border-red-200 rounded-lg p-3 text-xs font-code-meta text-red-700 overflow-x-auto shadow-sm">
+<span class="font-bold">TimeoutException:</span> KafkaConsumer failed to commit offset within 20000ms.
+          </div>
+<details class="group">
+<summary class="cursor-pointer text-xs font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-1 select-none">
+<span class="material-symbols-outlined text-[16px] group-open:rotate-90 transition-transform">chevron_right</span>
+<span>View Robot Execution Call Stack</span>
+</summary>
+<div class="mt-2.5 p-3.5 rounded-lg bg-slate-50 border border-slate-200 text-xs font-code-meta text-slate-700 space-y-1 overflow-x-auto">
+<div>kafka.errors.CommitFailedException: Commit cannot be completed since the group has already rebalanced.</div>
+<div>  File "kafka/ledger_sync.robot", line 110, in Commit Partition Offsets</div>
+<div class="text-red-600">  Kafka broker: b-1.prod-cluster.msk:9092, partition: ledger-entries-7</div>
+</div>
+</details>
+<div class="flex items-center justify-between pt-2 border-t border-red-100 text-xs">
+<span class="text-slate-500">Linked Jira Issue:</span>
+<a class="inline-flex items-center gap-1 font-code-meta text-blue-600 font-bold hover:underline" href="#">
+<span>DATA-892</span>
+<span class="material-symbols-outlined text-[13px]">launch</span>
+</a>
+</div>
+</div>
+</div>
+<!-- Footer for Triage List -->
+<div class="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+<span class="text-slate-600 font-medium">Showing 3 representative critical failures of 12 total.</span>
+<a class="text-blue-600 font-semibold hover:underline inline-flex items-center gap-1" href="#log-artifacts">
+<span>View All 12 Failures in log.html</span>
+<span class="material-symbols-outlined text-[15px]">arrow_forward</span>
+</a>
+</div>
+</section>
+<!-- Execution Environment & Diagnostic Artifacts Grid -->
+<section class="grid grid-cols-1 lg:grid-cols-3 gap-6" id="log-artifacts">
+<!-- Telemetry & Infra Box -->
+<div class="lg:col-span-2 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between gap-5">
+<div>
+<div class="flex items-center justify-between mb-1">
+<h2 class="font-headline-lg text-lg font-bold text-slate-900">Execution Telemetry &amp; Environment Footprint</h2>
+<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 text-xs font-semibold border border-blue-100">
+<span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span> 16 Pabot Workers Active
+            </span>
+</div>
+<p class="text-xs text-slate-500">Infrastructure and runtime configuration for execution reproducibility.</p>
+</div>
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+<div class="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
+<span class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">CI/CD Pipeline</span>
+<div class="font-semibold text-xs text-slate-800 mt-1">Workflow #1,492 (Nightly Build)</div>
+<div class="text-xs font-code-meta text-slate-500">Commit: sha-8fbc218 (origin/main)</div>
+</div>
+<div class="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
+<span class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">Compute Node</span>
+<div class="font-semibold text-xs text-slate-800 mt-1">AWS c6i.4xlarge (Dedicated Runner)</div>
+<div class="text-xs text-slate-500 font-code-meta">16 vCPUs • 32 GB RAM • Linux 6.1 LTS</div>
+</div>
+<div class="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
+<span class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">Engine &amp; Runtime</span>
+<div class="font-semibold text-xs text-slate-800 mt-1">Robot Framework 7.1.1</div>
+<div class="text-xs text-slate-500 font-code-meta">Python 3.12.3 • Pabot Parallelism (16x)</div>
+</div>
+<div class="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
+<span class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">Browser Drivers</span>
+<div class="font-semibold text-xs text-slate-800 mt-1">Chrome 124 Headless</div>
+<div class="text-xs text-slate-500 font-code-meta">Firefox 125 Headless • Playwright Library</div>
+</div>
+</div>
+</div>
+<!-- Download Artifacts Box -->
+<div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between gap-5">
+<div>
+<h3 class="font-headline-md text-base font-bold text-slate-900">Downloadable Artifacts</h3>
+<p class="text-xs text-slate-500 mt-1">Official archived test run outputs and diagnostic reports.</p>
+</div>
+<div class="flex flex-col gap-2.5">
+<a class="flex items-center justify-between p-3 rounded-xl bg-slate-50 hover:bg-slate-100/80 border border-slate-200 transition group" href="#">
+<div class="flex items-center gap-2.5">
+<span class="material-symbols-outlined text-blue-600 text-[22px]">description</span>
+<div>
+<span class="text-xs font-bold text-slate-900 block group-hover:text-blue-600 transition">log.html</span>
+<span class="text-[11px] text-slate-500">Interactive detailed execution log</span>
+</div>
+</div>
+<span class="text-xs font-code-meta font-medium text-slate-600 bg-white px-2 py-0.5 rounded border border-slate-200">24.1 MB</span>
+</a>
+<a class="flex items-center justify-between p-3 rounded-xl bg-slate-50 hover:bg-slate-100/80 border border-slate-200 transition group" href="#">
+<div class="flex items-center gap-2.5">
+<span class="material-symbols-outlined text-blue-600 text-[22px]">code</span>
+<div>
+<span class="text-xs font-bold text-slate-900 block group-hover:text-blue-600 transition">output.xml</span>
+<span class="text-[11px] text-slate-500">Machine-readable JUnit/RF XML</span>
+</div>
+</div>
+<span class="text-xs font-code-meta font-medium text-slate-600 bg-white px-2 py-0.5 rounded border border-slate-200">48.3 MB</span>
+</a>
+<a class="flex items-center justify-between p-3 rounded-xl bg-slate-50 hover:bg-slate-100/80 border border-slate-200 transition group" href="#">
+<div class="flex items-center gap-2.5">
+<span class="material-symbols-outlined text-blue-600 text-[22px]">assessment</span>
+<div>
+<span class="text-xs font-bold text-slate-900 block group-hover:text-blue-600 transition">report.html</span>
+<span class="text-[11px] text-slate-500">Static standalone summary</span>
+</div>
+</div>
+<span class="text-xs font-code-meta font-medium text-slate-600 bg-white px-2 py-0.5 rounded border border-slate-200">8.4 MB</span>
+</a>
+</div>
+<button class="w-full py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold transition flex items-center justify-center gap-2 shadow-sm" type="button">
+<span class="material-symbols-outlined text-[18px]">folder_zip</span>
+<span>Download All Artifacts (.tar.gz)</span>
+</button>
+</div>
+</section>
+<!-- Executive Footer -->
+<footer class="p-6 rounded-2xl bg-white border border-slate-200 text-center flex flex-col items-center gap-2 text-slate-500 text-xs shadow-sm">
+<div class="flex items-center gap-1.5 text-emerald-600 font-semibold tracking-wide uppercase text-[11px]">
+<span class="material-symbols-outlined text-[16px]">verified</span>
+<span>Verified TestOps Quality Gate Delivery</span>
+</div>
+<p class="text-slate-600 max-w-xl">
+        Automated executive run report produced by TestOps Automation Service upon test suite completion. Dispatched to engineering leadership, release managers, and the QA distribution group.
+      </p>
+<div class="text-[11px] font-code-meta text-slate-400 mt-1">
+        Run SHA: 7e0b982f41cda83 • Host: ci-worker-eu-west-1a • Robot Framework 7.1.1
+      </div>
+</footer>
+</main>
+</body></html>
