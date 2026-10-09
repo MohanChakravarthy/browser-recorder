@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Robot Framework | Automation Execution Report</title>
+<style>
+:root{
+  --ink:#09194f; --muted:#6076ae; --blue:#1672ff; --blue2:#4b9bff;
+  --green:#10b981; --red:#ff414b; --amber:#ffad24; --purple:#8064ff;
+  --line:#e3ebf8; --panel:#ffffff; --bg:#f4f8ff; --pale:#edf4ff;
+  --shadow:0 4px 18px rgba(30,78,150,.035);
+}
+*{box-sizing:border-box}
+body{margin:0;background:linear-gradient(115deg,#f5f9ff 0%,#f1f7ff 58%,#f8fbff 100%);color:var(--ink);font-family:Inter,"Segoe UI",Roboto,Arial,sans-serif;font-size:12px;line-height:1.35}
+button,input,select{font:inherit}
+button{cursor:pointer}
+.page{max-width:1600px;margin:0 auto;padding:14px 18px 22px}
+.topbar{height:56px;display:flex;align-items:center;gap:18px;padding:0 20px;margin-bottom:10px}
+.brand{display:flex;align-items:center;gap:10px;min-width:290px}
+.brand-icon{width:45px;height:45px;border-radius:12px;background:linear-gradient(145deg,#328aff,#0055ed);display:grid;place-items:center;color:white;box-shadow:0 6px 14px #1975ff25}
+.brand-icon svg{width:25px;height:25px}
+.brand-title{font-size:20px;font-weight:750;letter-spacing:-.55px;line-height:1.1}
+.brand-sub{font-size:13px;color:#3e5790;margin-top:3px}
+.version{font-size:11px;font-weight:700;color:#2567d9;background:#e6f0ff;border-radius:6px;padding:4px 8px;margin-left:2px}
+.top-spacer{flex:1}
+.run-date{display:flex;align-items:center;gap:10px;color:#172b61;font-size:12px;min-width:260px}
+.run-date svg{width:20px;height:20px;color:#5473b4}
+.subtext{font-size:10px;color:#7287b8;margin-top:2px}
+.status{display:flex;align-items:center;gap:8px;background:#dcfbec;color:#07985c;border:1px solid #c7f5de;border-radius:9px;padding:9px 13px;min-width:177px}
+.status svg{width:22px;height:22px}
+.status strong{font-size:12px;letter-spacing:.1px}
+.status small{display:block;font-size:10px;margin-top:1px;color:#26976a}
+.panel{background:rgba(255,255,255,.94);border:1px solid #edf2fb;border-radius:12px;box-shadow:var(--shadow)}
+.meta-strip{display:grid;grid-template-columns:1.15fr .8fr 1.15fr 1.15fr 1.25fr 1.15fr .8fr;align-items:center;min-height:69px;padding:8px 10px;margin-bottom:13px}
+.meta-item{display:flex;align-items:center;gap:10px;min-width:0;padding:4px 12px;border-right:1px solid #e8eef9}
+.meta-item:last-child{border-right:0}
+.meta-icon{flex:0 0 35px;width:35px;height:35px;border-radius:10px;background:#f0f6ff;color:#1472ff;display:grid;place-items:center}
+.meta-icon svg{width:19px;height:19px}
+.meta-label{font-size:10px;color:#657cb2;margin-bottom:3px}
+.meta-value{font-size:11.5px;font-weight:650;color:#12275d;overflow-wrap:anywhere;line-height:1.3}
+.meta-value.normal{font-weight:500}
+.kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin-bottom:14px}
+.kpi{height:105px;padding:13px 14px;display:flex;align-items:flex-start;gap:11px;position:relative;overflow:hidden}
+.kpi-icon{width:46px;height:46px;flex:0 0 46px;border-radius:50%;display:grid;place-items:center;background:#eaf3ff;color:#1472ff}
+.kpi-icon svg{width:24px;height:24px}
+.kpi-copy{min-width:0;z-index:1}
+.kpi-label{font-size:12px;color:#415a95;margin:2px 0 5px}
+.kpi-value{font-size:29px;font-weight:750;letter-spacing:-1px;line-height:1.03;white-space:nowrap}
+.kpi-foot{font-size:10.5px;color:#7287b8;margin-top:7px;white-space:nowrap}
+.kpi.pass{background:linear-gradient(105deg,#fff,#f0fff8)}
+.kpi.pass .kpi-icon{background:#e5fbf0;color:#0aa76b}
+.kpi.pass .kpi-value,.kpi.pass .kpi-foot{color:#0ba76b}
+.kpi.fail{background:linear-gradient(105deg,#fff,#fff3f4)}
+.kpi.fail .kpi-icon{background:#fff0f1;color:#ff414b}
+.kpi.fail .kpi-value,.kpi.fail .kpi-foot{color:#ff414b}
+.kpi.skip .kpi-icon{background:#f0f3fa;color:#687ba4}
+.kpi .spark{position:absolute;right:10px;bottom:14px;width:54px;height:44px;opacity:.68}
+.kpi .spark rect{fill:#91baff}
+.kpi.pass .spark rect{fill:#72d9b3}.kpi.fail .spark rect{fill:#ff9ca2}
+.kpi .kpi-copy{padding-right:34px}
+.kpi.duration .kpi-copy{padding-right:0}
+.kpi.duration .spark{width:65px;right:8px}
+.insight-grid{display:grid;grid-template-columns:1.22fr .94fr .84fr;gap:11px;margin-bottom:14px}
+.chart-panel{padding:14px 16px 12px;min-height:229px}
+.panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:11px}
+.panel-title{font-size:15px;font-weight:750;letter-spacing:-.3px}
+.panel-desc{font-size:10.5px;color:#7084b3;margin-top:4px}
+.legend{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:10px;color:#6478a8}
+.legend span{display:flex;align-items:center;gap:4px;white-space:nowrap}
+.dot{display:inline-block;width:9px;height:9px;border-radius:3px}
+.dot.green{background:#23bd89}.dot.red{background:#ff525b}.dot.gray{background:#aab8d1}.dot.blue{background:#1775ff}
+.chart-svg{width:100%;height:168px;display:block}
+.duration-list{display:flex;flex-direction:column;gap:12px;margin-top:14px}
+.duration-row{display:grid;grid-template-columns:minmax(112px,1.15fr) minmax(70px,1fr) auto;align-items:center;gap:10px;font-size:10.5px;color:#536b9f}
+.bar-track{height:16px;background:#edf3fc;border-radius:4px;overflow:hidden}
+.bar-fill{height:100%;border-radius:4px;background:linear-gradient(90deg,#59a8ff,#3986ff)}
+.bar-value{white-space:nowrap;text-align:right;color:#50679c;font-size:10.5px}
+.failure-layout{display:grid;grid-template-columns:132px 1fr;gap:13px;align-items:center;margin-top:12px}
+.donut{width:132px;height:132px;border-radius:50%;background:conic-gradient(#ff474f 0 43%,#ffae2a 43% 67%,#4da7ff 67% 83%,#8268ff 83% 94%,#b4bfd4 94% 100%);display:grid;place-items:center;position:relative}
+.donut:before{content:"";position:absolute;inset:22px;background:white;border-radius:50%}
+.donut-center{position:relative;text-align:center}
+.donut-center strong{display:block;font-size:23px;letter-spacing:-.6px}
+.donut-center span{font-size:10px;color:#7185b5}
+.failure-legend{display:flex;flex-direction:column;gap:11px}
+.failure-legend .row{display:grid;grid-template-columns:10px 1fr auto;align-items:center;gap:7px;font-size:10.5px}
+.failure-legend .row strong{font-size:10.5px}
+.suite-panel{padding:12px 16px 10px;margin-bottom:13px}
+.section-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:9px}
+.section-title{font-size:15px;font-weight:750;letter-spacing:-.25px}
+.section-title small{font-weight:500;color:#6f83b4;font-size:11px;margin-left:5px}
+.link-btn{border:0;background:transparent;color:#086cff;font-weight:600;padding:5px 0;font-size:11px;white-space:nowrap}
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:separate;border-spacing:0;font-size:10.5px;white-space:nowrap}
+thead th{text-align:left;background:#f2f7ff;color:#536a9e;font-size:9px;text-transform:uppercase;letter-spacing:.35px;font-weight:700;padding:8px 10px;border-top:1px solid #e8effa;border-bottom:1px solid #e8effa}
+thead th:first-child{border-radius:5px 0 0 5px}thead th:last-child{border-radius:0 5px 5px 0}
+tbody td{padding:7px 10px;border-bottom:1px solid #edf2fa;color:#324b85}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:hover td{background:#f8fbff}
+.center{text-align:center}.right{text-align:right}
+.green-text{color:#0aa76b!important}.red-text{color:#ff414b!important}.muted{color:#7a8db9!important}
+.passbar{display:flex;align-items:center;gap:8px;min-width:150px}
+.passbar .track{width:105px;height:9px;background:#eaf0fa;border-radius:4px;overflow:hidden}
+.passbar .fill{height:100%;background:linear-gradient(90deg,#57aaff,#3485ff);border-radius:4px}
+.passbar .fill.low{background:linear-gradient(90deg,#ff686e,#ff4b52)}
+.fail-panel{padding:12px 16px 10px;margin-bottom:13px}
+.fail-tools{display:flex;align-items:center;gap:8px}
+.search{width:270px;border:1px solid #dfe8f7;background:#fff;border-radius:7px;padding:8px 10px;color:#263f78;outline:none}
+.search:focus,select:focus{border-color:#75aaff;box-shadow:0 0 0 3px #e7f1ff}
+select{border:1px solid #dfe8f7;background:#fff;color:#314b83;border-radius:7px;padding:8px 10px;outline:none;max-width:150px}
+.error-cell{color:#ff414b;max-width:390px;overflow:hidden;text-overflow:ellipsis}
+.error-wrap{display:flex;align-items:center;gap:7px}
+.error-icon{width:14px;height:14px;border-radius:50%;background:#ff414b;color:white;display:inline-grid;place-items:center;font-size:10px;font-weight:800;flex:0 0 14px}
+.retry{display:inline-block;padding:4px 7px;border-radius:5px;background:#eaf3ff;color:#2878ee;font-weight:700}
+.retry.bad{background:#fff0f0;color:#ff414b}
+.evidence{display:flex;align-items:center;justify-content:center;gap:12px;color:#5372ad}
+.evidence button{border:0;background:transparent;color:#5473ad;padding:0;display:grid;place-items:center}
+.evidence svg{width:15px;height:15px}
+.row-open{color:#0872ff;font-size:16px}
+.table-footer{display:flex;justify-content:space-between;align-items:center;color:#8092b9;font-size:10px;padding:9px 2px 0}
+.pagination{display:flex;gap:4px;align-items:center}
+.pagination button{border:1px solid #e3ebf8;background:#fff;color:#6076aa;border-radius:5px;padding:4px 8px}
+.pagination button.active{background:#176dff;color:#fff;border-color:#176dff}
+.artifacts{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px}
+.artifact{border:1px solid #e2ebf9;border-radius:8px;padding:9px 10px;display:flex;align-items:center;gap:8px;min-width:0;background:#fff;color:inherit;text-decoration:none;transition:.15s}
+.artifact:hover{border-color:#a8caff;background:#f9fbff;transform:translateY(-1px)}
+.artifact-icon{width:34px;height:34px;border-radius:8px;background:#eff6ff;color:#1772ff;display:grid;place-items:center;flex:0 0 34px}
+.artifact-icon svg{width:19px;height:19px}
+.artifact-name{font-size:10.5px;font-weight:650;overflow:hidden;text-overflow:ellipsis}
+.artifact-size{font-size:9.5px;color:#7c8fba;margin-top:3px}
+.footer-note{display:flex;justify-content:space-between;gap:12px;padding:12px 4px 0;color:#8798bc;font-size:9.5px}
+.toast{position:fixed;right:22px;bottom:22px;background:#0b1d50;color:white;padding:12px 16px;border-radius:9px;box-shadow:0 8px 30px #09245c30;opacity:0;transform:translateY(8px);pointer-events:none;transition:.2s;z-index:10}
+.toast.show{opacity:1;transform:translateY(0)}
+@media(max-width:1200px){.meta-strip{grid-template-columns:repeat(4,1fr)}.meta-item:nth-child(4){border-right:0}.meta-item:nth-child(n+5){border-top:1px solid #edf2fa}.kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.insight-grid{grid-template-columns:1fr 1fr}.insight-grid .failure-panel-inline{grid-column:1/-1}.artifacts{grid-template-columns:repeat(4,minmax(0,1fr))}.brand{min-width:250px}}
+@media(max-width:760px){.page{padding:8px}.topbar{padding:0 4px;gap:8px;height:auto;flex-wrap:wrap}.brand{min-width:0;flex:1}.brand-title{font-size:17px}.brand-sub{font-size:11px}.run-date{min-width:0}.status{min-width:0;padding:7px}.meta-strip{grid-template-columns:repeat(2,minmax(0,1fr));padding:6px}.meta-item{border-right:0!important;border-bottom:1px solid #edf2fa;padding:8px 5px}.meta-item:nth-last-child(-n+1){border-bottom:0}.kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.kpi{height:100px;padding:10px;gap:8px}.kpi-icon{width:36px;height:36px;flex-basis:36px}.kpi-value{font-size:24px}.kpi-label{font-size:11px}.kpi-foot{font-size:9px}.insight-grid{grid-template-columns:1fr}.chart-panel{min-height:0}.chart-svg{height:160px}.section-head{align-items:flex-start;flex-direction:column}.fail-tools{width:100%;flex-wrap:wrap}.search{width:100%}.artifacts{grid-template-columns:repeat(2,minmax(0,1fr))}.failure-layout{grid-template-columns:110px 1fr}.donut{width:110px;height:110px}.donut:before{inset:18px}.footer-note{flex-direction:column}}
+@media print{body{background:#fff}.page{max-width:none;padding:0}.panel{box-shadow:none;break-inside:avoid}.topbar{padding:0}.link-btn,.fail-tools,.pagination{display:none}.artifacts{grid-template-columns:repeat(4,1fr)}}
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="15" rx="3"/><path d="M8 5V3h8v2M8 11h.01M16 11h.01M9 15c1.8 1.4 4.2 1.4 6 0"/></svg></div>
+      <div><div class="brand-title">Robot Framework</div><div class="brand-sub">Automation Execution Report</div></div>
+      <span class="version">v6.1</span>
+    </div>
+    <div class="top-spacer"></div>
+    <div class="run-date"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 10h18"/></svg><div><strong>Apr 28, 2026&nbsp; 02:00:15 – 02:48:37 UTC</strong><div class="subtext">Scheduled Nightly Execution</div></div></div>
+    <div class="status"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" fill="#0ca76b"/><path d="m7 12 3.2 3.2L17.5 8" stroke="#fff" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg><div><strong>COMPLETED</strong><small>48m 22s total duration</small></div></div>
+  </header>
+
+  <section class="panel meta-strip" aria-label="Batch metadata">
+    <div class="meta-item"><div class="meta-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 12h7M9 16h7"/></svg></div><div><div class="meta-label">Batch Name</div><div class="meta-value">rf-regression-xyz-batch</div></div></div>
+    <div class="meta-item"><div class="meta-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M8 3v4M16 3v4M4 10h16M9 14l2 2 4-4"/></svg></div><div><div class="meta-label">Jenkins Job / Build</div><div class="meta-value">#1,284</div></div></div>
+    <div class="meta-item"><div class="meta-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2M9 2h6"/></svg></div><div><div class="meta-label">Batch Scheduler</div><div class="meta-value">jenkins-agent-linux-08</div><div class="subtext">(Jenkins)</div></div></div>
+    <div class="meta-item"><div class="meta-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l4 2"/></svg></div><div><div class="meta-label">Trigger</div><div class="meta-value normal">Scheduled (Cron: 0 2 * * *)</div></div></div>
+    <div class="meta-item"><div class="meta-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/></svg></div><div><div class="meta-label">Execution Window</div><div class="meta-value normal">02:00:15 – 02:48:37 UTC</div><div class="subtext">Apr 28, 2026</div></div></div>
+    <div class="meta-item"><div class="meta-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 21c.5-4 3.1-6 8-6s7.5 2 8 6"/></svg></div><div><div class="meta-label">Executed By</div><div class="meta-value">jenkins-agent-linux-08</div></div></div>
+    <div class="meta-item"><div class="meta-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-1.7 2.9-.2-.1a1.7 1.7 0 0 0-1.8.3l-.1.1h-3.4l-.1-.2a1.7 1.7 0 0 0-1.8-.3l-.2.1-1.7-2.9.1-.1A1.7 1.7 0 0 0 9 15l-.1-.2v-3.4L9 11a1.7 1.7 0 0 0-.3-1.8l-.1-.2 1.7-2.9.2.1a1.7 1.7 0 0 0 1.8-.3l.1-.1h3.4l.1.2a1.7 1.7 0 0 0 1.8.3l.2-.1 1.7 2.9-.1.1a1.7 1.7 0 0 0-.3 1.8l.1.2v3.4z"/></svg></div><div><div class="meta-label">Robot Framework</div><div class="meta-value">v6.1.1</div></div></div>
+  </section>
+
+  <section class="kpis" aria-label="Execution metrics">
+    <article class="panel kpi"><div class="kpi-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h9l4 4v14H6zM14 3v5h5M9 12h7M9 16h7"/></svg></div><div class="kpi-copy"><div class="kpi-label">Total Test Cases</div><div class="kpi-value">2,480</div><div class="kpi-foot">18 Test Suites</div></div><svg class="spark" viewBox="0 0 54 44"><rect x="2" y="29" width="6" height="13" rx="1"/><rect x="12" y="22" width="6" height="20" rx="1"/><rect x="22" y="15" width="6" height="27" rx="1"/><rect x="32" y="9" width="6" height="33" rx="1"/><rect x="42" y="2" width="6" height="40" rx="1"/></svg></article>
+    <article class="panel kpi pass"><div class="kpi-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="m7.5 12 3 3 6-6"/></svg></div><div class="kpi-copy"><div class="kpi-label">Passed</div><div class="kpi-value">2,358</div><div class="kpi-foot">95.0% Pass Rate</div></div><svg class="spark" viewBox="0 0 54 44"><rect x="2" y="29" width="6" height="13" rx="1"/><rect x="12" y="22" width="6" height="20" rx="1"/><rect x="22" y="15" width="6" height="27" rx="1"/><rect x="32" y="9" width="6" height="33" rx="1"/><rect x="42" y="2" width="6" height="40" rx="1"/></svg></article>
+    <article class="panel kpi fail"><div class="kpi-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 16.5v.1"/></svg></div><div class="kpi-copy"><div class="kpi-label">Failed</div><div class="kpi-value">74</div><div class="kpi-foot">3.0% Failed</div></div><svg class="spark" viewBox="0 0 54 44"><rect x="2" y="29" width="6" height="13" rx="1"/><rect x="12" y="22" width="6" height="20" rx="1"/><rect x="22" y="15" width="6" height="27" rx="1"/><rect x="32" y="9" width="6" height="33" rx="1"/><rect x="42" y="2" width="6" height="40" rx="1"/></svg></article>
+    <article class="panel kpi skip"><div class="kpi-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M7 12h10"/></svg></div><div class="kpi-copy"><div class="kpi-label">Skipped</div><div class="kpi-value">48</div><div class="kpi-foot">1.9% Skipped</div></div><svg class="spark" viewBox="0 0 54 44"><rect x="2" y="29" width="6" height="13" rx="1"/><rect x="12" y="22" width="6" height="20" rx="1"/><rect x="22" y="15" width="6" height="27" rx="1"/><rect x="32" y="9" width="6" height="33" rx="1"/><rect x="42" y="2" width="6" height="40" rx="1"/></svg></article>
+    <article class="panel kpi"><div class="kpi-icon" style="background:#f0f0ff;color:#5c56ff"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m13 2-9 12h7l-1 8 10-13h-7z"/></svg></div><div class="kpi-copy"><div class="kpi-label">Execution Pace</div><div class="kpi-value">51.2<span style="font-size:17px;letter-spacing:0"> / min</span></div><div class="kpi-foot">1.1% faster than last run</div></div></article>
+    <article class="panel kpi duration"><div class="kpi-icon" style="background:#edf2ff;color:#1b61ff"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div><div class="kpi-copy"><div class="kpi-label">Total Duration</div><div class="kpi-value">48m 22s</div><div class="kpi-foot">Start: 02:00:15 | End: 02:48:37</div></div></article>
+  </section>
+
+  <section class="insight-grid">
+    <article class="panel chart-panel">
+      <div class="panel-head"><div><div class="panel-title">Execution Trend</div><div class="panel-desc">Test case result trend for recent builds</div></div><div class="legend"><span><i class="dot green"></i>Passed</span><span><i class="dot red"></i>Failed</span><span><i class="dot gray"></i>Skipped</span><span><i class="dot blue"></i>Pass Rate</span></div></div>
+      <svg class="chart-svg" viewBox="0 0 530 175" preserveAspectRatio="none" role="img" aria-label="Recent execution trend chart">
+        <g stroke="#e8effa" stroke-width="1"><path d="M49 20H466M49 53H466M49 86H466M49 119H466M49 152H466"/><path d="M49 20V152M466 20V152"/></g>
+        <g fill="#7185b5" font-size="10"><text x="5" y="24">3,200</text><text x="5" y="57">2,400</text><text x="5" y="90">1,600</text><text x="13" y="123">800</text><text x="31" y="156">0</text><text x="476" y="24">100%</text><text x="482" y="57">75%</text><text x="482" y="90">50%</text><text x="482" y="123">25%</text><text x="490" y="156">0%</text></g>
+        <g><rect x="72" y="52" width="28" height="100" fill="#25bd8c" opacity=".78"/><rect x="72" y="49" width="28" height="3" fill="#ff5a60"/><rect x="72" y="47" width="28" height="2" fill="#aab8d1"/>
+        <rect x="126" y="52" width="28" height="100" fill="#25bd8c" opacity=".78"/><rect x="126" y="49" width="28" height="3" fill="#ff5a60"/><rect x="126" y="47" width="28" height="2" fill="#aab8d1"/>
+        <rect x="180" y="52" width="28" height="100" fill="#25bd8c" opacity=".78"/><rect x="180" y="49" width="28" height="3" fill="#ff5a60"/><rect x="180" y="47" width="28" height="2" fill="#aab8d1"/>
+        <rect x="234" y="52" width="28" height="100" fill="#25bd8c" opacity=".78"/><rect x="234" y="49" width="28" height="3" fill="#ff5a60"/><rect x="234" y="47" width="28" height="2" fill="#aab8d1"/>
+        <rect x="288" y="52" width="28" height="100" fill="#25bd8c" opacity=".78"/><rect x="288" y="49" width="28" height="3" fill="#ff5a60"/><rect x="288" y="47" width="28" height="2" fill="#aab8d1"/>
+        <rect x="342" y="52" width="28" height="100" fill="#25bd8c" opacity=".78"/><rect x="342" y="49" width="28" height="3" fill="#ff5a60"/><rect x="342" y="47" width="28" height="2" fill="#aab8d1"/>
+        <rect x="396" y="45" width="28" height="107" fill="#25bd8c" opacity=".78"/><rect x="396" y="41" width="28" height="4" fill="#ff5a60"/><rect x="396" y="38" width="28" height="3" fill="#aab8d1"/></g>
+        <polyline points="86,33 140,33 194,33 248,27 302,27 356,27 410,28" fill="none" stroke="#1672ff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+        <g fill="#1672ff" stroke="white" stroke-width="1.2"><circle cx="86" cy="33" r="3.7"/><circle cx="140" cy="33" r="3.7"/><circle cx="194" cy="33" r="3.7"/><circle cx="248" cy="27" r="3.7"/><circle cx="302" cy="27" r="3.7"/><circle cx="356" cy="27" r="3.7"/><circle cx="410" cy="28" r="3.7"/></g>
+        <g fill="#647aa9" font-size="10" text-anchor="middle"><text x="86" y="169">#1278</text><text x="140" y="169">#1279</text><text x="194" y="169">#1280</text><text x="248" y="169">#1281</text><text x="302" y="169">#1282</text><text x="356" y="169">#1283</text><text x="410" y="169" fill="#0769ff" font-weight="700">#1284</text></g>
+      </svg>
+    </article>
+    <article class="panel chart-panel">
+      <div class="panel-head"><div><div class="panel-title">Execution Time Distribution</div><div class="panel-desc">Runtime share by suite (top 5)</div></div><div style="display:flex;gap:5px"><button class="link-btn" id="durationMode" style="background:#eaf3ff;padding:5px 9px;border-radius:6px">By Duration</button><button class="link-btn" id="countMode" style="background:#fff;border:1px solid #e3ebf8;padding:5px 9px;border-radius:6px;color:#6379a9">By Test Cases</button></div></div>
+      <div class="duration-list" id="durationList">
+        <div class="duration-row" data-duration="29.3" data-count="25.3"><span>Payments_Checkout.robot</span><div class="bar-track"><div class="bar-fill" style="width:100%"></div></div><span class="bar-value">14m 12s (29.3%)</span></div>
+        <div class="duration-row" data-duration="24.3" data-count="22.1"><span>Customer_Onboarding.robot</span><div class="bar-track"><div class="bar-fill" style="width:82%"></div></div><span class="bar-value">11m 45s (24.3%)</span></div>
+        <div class="duration-row" data-duration="13.8" data-count="17.6"><span>Catalog_Orders.robot</span><div class="bar-track"><div class="bar-fill" style="width:49%"></div></div><span class="bar-value">6m 38s (13.8%)</span></div>
+        <div class="duration-row" data-duration="10.7" data-count="12.8"><span>Compliance_Audit.robot</span><div class="bar-track"><div class="bar-fill" style="width:36%"></div></div><span class="bar-value">5m 12s (10.7%)</span></div>
+        <div class="duration-row" data-duration="12.6" data-count="14.8"><span>Integrations_Webhooks.robot</span><div class="bar-track"><div class="bar-fill" style="width:44%"></div></div><span class="bar-value">7m 05s (12.6%)</span></div>
+        <div class="duration-row" data-duration="9.3" data-count="7.4"><span>Others (13 suites)</span><div class="bar-track"><div class="bar-fill" style="width:31%;opacity:.65"></div></div><span class="bar-value">3m 10s (9.3%)</span></div>
+      </div>
+    </article>
+    <article class="panel chart-panel failure-panel-inline">
+      <div class="panel-head"><div><div class="panel-title">Failure Analysis</div><div class="panel-desc">Breakdown of 74 failed tests</div></div></div>
+      <div class="failure-layout"><div class="donut"><div class="donut-center"><strong>74</strong><span>Failures</span></div></div><div class="failure-legend">
+        <div class="row"><i class="dot red" style="border-radius:50%"></i><span>Assertion Failed</span><strong>32&nbsp; (43%)</strong></div>
+        <div class="row"><i class="dot" style="background:#ffae2a;border-radius:50%"></i><span>Element Not Found</span><strong>18&nbsp; (24%)</strong></div>
+        <div class="row"><i class="dot" style="background:#4da7ff;border-radius:50%"></i><span>Timeout</span><strong>12&nbsp; (16%)</strong></div>
+        <div class="row"><i class="dot" style="background:#8268ff;border-radius:50%"></i><span>Validation Error</span><strong>8&nbsp; (11%)</strong></div>
+        <div class="row"><i class="dot" style="background:#b4bfd4;border-radius:50%"></i><span>Others</span><strong>4&nbsp; (6%)</strong></div>
+      </div></div>
+    </article>
+  </section>
+
+  <section class="panel suite-panel">
+    <div class="section-head"><div class="section-title">Suite-wise Results <small>(18 Test Suites)</small></div><button class="link-btn" id="viewSuites">View All Suites&nbsp; →</button></div>
+    <div class="table-wrap"><table id="suiteTable"><thead><tr><th>#</th><th>Test Suite</th><th>Total</th><th>Passed</th><th>Failed</th><th>Skipped</th><th>Pass Rate</th><th>Duration</th><th>Avg. Test Time</th></tr></thead><tbody>
+      <tr><td>1</td><td>Payments_Checkout.robot</td><td>628</td><td class="green-text">588</td><td class="red-text">22</td><td>18</td><td><div class="passbar"><div class="track"><div class="fill" style="width:94.8%"></div></div><strong>94.8%</strong></div></td><td>14m 12s</td><td>1.4s</td></tr>
+      <tr><td>2</td><td>Customer_Onboarding.robot</td><td>548</td><td class="green-text">522</td><td class="red-text">12</td><td>6</td><td><div class="passbar"><div class="track"><div class="fill" style="width:96.6%"></div></div><strong>96.6%</strong></div></td><td>11m 45s</td><td>1.3s</td></tr>
+      <tr><td>3</td><td>Catalog_Orders.robot</td><td>436</td><td class="green-text">428</td><td class="red-text">8</td><td>4</td><td><div class="passbar"><div class="track"><div class="fill" style="width:97.2%"></div></div><strong>97.2%</strong></div></td><td>6m 38s</td><td>0.9s</td></tr>
+      <tr><td>4</td><td>Compliance_Audit.robot</td><td>318</td><td class="green-text">312</td><td class="red-text">4</td><td>2</td><td><div class="passbar"><div class="track"><div class="fill" style="width:97.4%"></div></div><strong>97.4%</strong></div></td><td>5m 12s</td><td>1.0s</td></tr>
+      <tr><td>5</td><td>Integrations_Webhooks.robot</td><td>368</td><td class="green-text">316</td><td class="red-text">24</td><td>28</td><td><div class="passbar"><div class="track"><div class="fill low" style="width:87.7%"></div></div><strong>87.7%</strong></div></td><td>7m 05s</td><td>1.2s</td></tr>
+    </tbody></table></div>
+    <div class="table-footer"><span id="suiteCount">Showing 5 of 18 suites · illustrative sample data</span><div class="pagination"><button aria-label="Previous">‹</button><button class="active">1</button><button id="suitePage2">2</button><button>3</button><button>…</button><button>Next ›</button></div></div>
+  </section>
+
+  <section class="panel fail-panel">
+    <div class="section-head"><div><div class="section-title">Failed Test Cases <span class="red-text">(74)</span></div><div class="panel-desc">Search failed tests, inspect error details and open execution evidence.</div></div><div class="fail-tools"><input class="search" id="failSearch" placeholder="⌕  Search by test name, suite, error message..." aria-label="Search failed tests"/><select id="suiteFilter" aria-label="Filter by suite"><option value="">All Suites</option><option>Payments_Checkout.robot</option><option>Integrations_Webhooks.robot</option><option>Compliance_Audit.robot</option><option>Customer_Onboarding.robot</option><option>Catalog_Orders.robot</option></select><select id="errorFilter" aria-label="Filter by error type"><option value="">All Error Types</option><option value="Assertion">Assertion</option><option value="Timeout">Timeout</option><option value="Element">Element Not Found</option><option value="Validation">Validation</option><option value="Database">Database</option></select></div></div>
+    <div class="table-wrap"><table id="failTable"><thead><tr><th>#</th><th>Test Case</th><th>Suite</th><th>Error Message</th><th>Duration</th><th>Retries</th><th class="center">Evidence</th><th></th></tr></thead><tbody>
+      <tr data-suite="Payments_Checkout.robot" data-error="Assertion"><td>1</td><td>Verify Credit Card Payment</td><td class="muted">Payments_Checkout.robot</td><td class="error-cell"><span class="error-wrap"><i class="error-icon">!</i> BuiltIn.Should Be Equal: Expected '201' but got '500'</span></td><td>14.2s</td><td><span class="retry">2/2</span></td><td><div class="evidence"><button title="Screenshot" data-message="Screenshot evidence is linked by your report integration."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m4 17 5-5 3 3 3-4 5 6"/></svg></button><button title="Log" data-message="Keyword log is linked by your report integration."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h9l4 4v14H6zM14 3v5h5M9 12h7M9 16h7"/></svg></button><button title="Video" data-message="Video evidence is linked by your report integration."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3z"/></svg></button></div></td><td class="row-open">›</td></tr>
+      <tr data-suite="Integrations_Webhooks.robot" data-error="Timeout"><td>2</td><td>Sync Webhook Payload</td><td class="muted">Integrations_Webhooks.robot</td><td class="error-cell"><span class="error-wrap"><i class="error-icon">!</i> BuiltIn.Wait Until Keyword Succeeds: Timeout 30s exceeded</span></td><td>38.1s</td><td><span class="retry bad">3/2</span></td><td><div class="evidence"><button title="Screenshot" data-message="Screenshot evidence is linked by your report integration."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m4 17 5-5 3 3 3-4 5 6"/></svg></button><button title="Log" data-message="Keyword log is linked by your report integration."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h9l4 4v14H6zM14 3v5h5M9 12h7M9 16h7"/></svg></button><button title="Video" data-message="Video evidence is linked by your report integration."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3z"/></svg></button></div></td><td class="row-open">›</td></tr>
+      <tr data-suite="Customer_Onboarding.robot" data-error="Element"><td>3</td><td>Validate Token</td><td class="muted">Customer_Onboarding.robot</td><td class="error-cell"><span class="error-wrap"><i class="error-icon">!</i> SeleniumLibrary.Wait Until Element Is Visible: Element not visible</span></td><td>8.4s</td><td><span class="retry">1/1</span></td><td><div class="evidence"><button title="Screenshot" data-message="Screenshot evidence is linked by your report integration."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m4 17 5-5 3 3 3-4 5 6"/></svg></button><button title="Log" data-message="Keyword log is linked by your report integration."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h9l4 4v14H6zM14 3v5h5M9 12h7M9 16h7"/></svg></button><button title="Video" data-message="Video evidence is linked by your report integration."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3z"/></svg></button></div></td><td class="row-open">›</td></tr>
+      <tr data-suite="Compliance_Audit.robot" data-error="Validation"><td>4</td><td>Verify Signature</td><td class="muted">Compliance_Audit.robot</td><td class="error-cell"><span class="error-wrap"><i class="error-icon">!</i> CryptLibrary.Verify Signature: SAML XML certificate verification failed</span></td><td>4.7s</td><td><span class="retry">2/2</span></td><td><div class="evidence"><button title="Screenshot" data-message="Screenshot evidence is linked by your report integration."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m4 17 5-5 3 3 3-4 5 6"/></svg></button><button title="Log" data-message="Keyword log is linked by your report integration."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h9l4 4v14H6zM14 3v5h5M9 12h7M9 16h7"/></svg></button><button title="Video" data-message="Video evidence is linked by your report integration."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3z"/></svg></button></div></td><td class="row-open">›</td></tr>
+      <tr data-suite="Integrations_Webhooks.robot" data-error="Database"><td>5</td><td>Reserve Inventory</td><td class="muted">Integrations_Webhooks.robot</td><td class="error-cell"><span class="error-wrap"><i class="error-icon">!</i> DatabaseLibrary.Execute Sql: Inventory SKU not found</span></td><td>11.0s</td><td><span class="retry bad">1/2</span></td><td><div class="evidence"><button title="Screenshot" data-message="Screenshot evidence is linked by your report integration."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m4 17 5-5 3 3 3-4 5 6"/></svg></button><button title="Log" data-message="Keyword log is linked by your report integration."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h9l4 4v14H6zM14 3v5h5M9 12h7M9 16h7"/></svg></button><button title="Video" data-message="Video evidence is linked by your report integration."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3z"/></svg></button></div></td><td class="row-open">›</td></tr>
+    </tbody></table></div>
+    <div class="table-footer"><span id="failCount">Showing 5 sample failures of 74 total · connect to output.xml for live report data</span><div class="pagination"><button>‹</button><button class="active">1</button><button>2</button><button>3</button><button>…</button><button>Next ›</button></div></div>
+  </section>
+
+  <section class="panel suite-panel">
+    <div class="section-head"><div class="section-title">Execution Artifacts</div><span class="panel-desc">Report files and diagnostics generated by the Jenkins batch</span></div>
+    <div class="artifacts">
+      <a class="artifact" href="#" data-file="report.html"><span class="artifact-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h9l4 4v14H6zM14 3v5h5M9 12h7M9 16h7"/></svg></span><span><div class="artifact-name">report.html</div><div class="artifact-size">2.4 MB</div></span></a>
+      <a class="artifact" href="#" data-file="log.html"><span class="artifact-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h9l4 4v14H6zM14 3v5h5M9 12h7M9 16h7"/></svg></span><span><div class="artifact-name">log.html</div><div class="artifact-size">2.2 MB</div></span></a>
+      <a class="artifact" href="#" data-file="output.xml"><span class="artifact-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v7c0 4 16 4 16 0V5M4 12v7c0 4 16 4 16 0v-7"/></svg></span><span><div class="artifact-name">output.xml</div><div class="artifact-size">1.8 MB</div></span></a>
+      <a class="artifact" href="#" data-file="screenshots.zip"><span class="artifact-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m4 17 5-5 3 3 3-4 5 6"/></svg></span><span><div class="artifact-name">Screenshots (18)</div><div class="artifact-size">25.8 MB</div></span></a>
+      <a class="artifact" href="#" data-file="worker-logs.zip"><span class="artifact-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V4h8v3M8 12h8M8 16h5"/></svg></span><span><div class="artifact-name">Worker Logs (32)</div><div class="artifact-size">8.2 MB</div></span></a>
+      <a class="artifact" href="#" data-file="jenkins-console.log"><span class="artifact-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h9l4 4v14H6zM14 3v5h5M9 12h7M9 16h7"/></svg></span><span><div class="artifact-name">Jenkins Console Log</div><div class="artifact-size">8.2 MB</div></span></a>
+      <a class="artifact" href="#" data-file="run-summary.json"><span class="artifact-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m8 4-5 8 5 8M16 4l5 8-5 8M14 3l-4 18"/></svg></span><span><div class="artifact-name">Run Summary (JSON)</div><div class="artifact-size">1.4 MB</div></span></a>
+    </div>
+  </section>
+  <footer class="footer-note"><span>Robot Framework · Jenkins CI/CD Automation Pipeline · Batch Execution Report</span><span>Build #1,284 · Generated Apr 28, 2026 · Sample layout — connect actual Jenkins artifacts for production data</span></footer>
+</div>
+<div class="toast" id="toast" role="status"></div>
+<script>
+const toast=document.getElementById('toast');
+let toastTimer;
+function notify(msg){toast.textContent=msg;toast.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>toast.classList.remove('show'),2800)}
+const search=document.getElementById('failSearch'), suiteFilter=document.getElementById('suiteFilter'), errorFilter=document.getElementById('errorFilter');
+function filterFailures(){
+  const q=search.value.trim().toLowerCase(), suite=suiteFilter.value, error=errorFilter.value;
+  let shown=0;
+  document.querySelectorAll('#failTable tbody tr').forEach(row=>{
+    const text=row.innerText.toLowerCase();
+    const visible=(!q||text.includes(q))&&(!suite||row.dataset.suite===suite)&&(!error||row.dataset.error===error);
+    row.style.display=visible?'':'none';if(visible)shown++;
+  });
+  document.getElementById('failCount').textContent=`Showing ${shown} matching sample failures of 74 total · connect to output.xml for live report data`;
+}
+[search,suiteFilter,errorFilter].forEach(el=>el.addEventListener(el==search?'input':'change',filterFailures));
+document.getElementById('durationMode').addEventListener('click',()=>{
+  document.getElementById('durationMode').style.background='#eaf3ff';document.getElementById('durationMode').style.color='#086cff';
+  document.getElementById('countMode').style.background='#fff';document.getElementById('countMode').style.color='#6379a9';
+  document.querySelectorAll('.duration-row').forEach(row=>{row.querySelector('.bar-fill').style.width=(Number(row.dataset.duration)/29.3*100)+'%';});
+  notify('Showing suite runtime share');
+});
+document.getElementById('countMode').addEventListener('click',()=>{
+  document.getElementById('countMode').style.background='#eaf3ff';document.getElementById('countMode').style.color='#086cff';
+  document.getElementById('durationMode').style.background='#fff';document.getElementById('durationMode').style.color='#6379a9';
+  document.querySelectorAll('.duration-row').forEach(row=>{row.querySelector('.bar-fill').style.width=(Number(row.dataset.count)/25.3*100)+'%';});
+  notify('Showing relative test-case counts');
+});
+document.getElementById('viewSuites').addEventListener('click',()=>notify('Connect the report to Robot Framework output.xml to load all 18 suites.'));
+document.querySelectorAll('[data-message]').forEach(btn=>btn.addEventListener('click',()=>notify(btn.dataset.message)));
+document.querySelectorAll('[data-file]').forEach(a=>a.addEventListener('click',e=>{e.preventDefault();notify(`Artifact "${a.dataset.file}" needs its Jenkins URL configured.`)}));
+document.querySelectorAll('.pagination button').forEach(btn=>btn.addEventListener('click',()=>{if(!btn.classList.contains('active'))notify('Pagination is a visual placeholder until the complete execution dataset is connected.')}));
+document.querySelectorAll('#suiteTable tbody tr').forEach(row=>row.addEventListener('click',()=>{row.style.background=row.style.background?'':'#f4f8ff'}));
+</script>
+</body>
+</html>
