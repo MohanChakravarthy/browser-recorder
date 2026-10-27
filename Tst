@@ -149,3 +149,7 @@ Decision order:
   - nested forms
   - dynamic enable/disable logic
 - Maximize success rate on enterprise applications
+
+
+
+See my team is having an an web application...it's build on top of robot framework and there is no change in the functionality but there is a total revamp in the UI...due to which the tests are failing and the team is working on fixing the issues and doing this maintenance task from long back...it's been from 4 months ....now what my manager ask is ..to come up with a solution that resolve this...issue when a ui change happens..he don't want the team to spent that much tym on these kind of maintenance work so for this...he wanted me to come up with very strong very scable very robust not a demo tool kind of Ai soultion for these kind of issues...so when the user is executing the tests...if there is an UI change...this ai solution should execute the each test and see why it's failed if it's a ui change that it should automatically update the locators and like that it should do for all the tests cases...so instead of ppl working on the ui revamp I need an ai soultion should work and complete the full ui changes and then later user can execute it normally without any issues...
