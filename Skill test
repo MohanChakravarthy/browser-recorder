@@ -1,0 +1,295 @@
+Build a Skill-Based AI Test Maintenance Agent — Working POC
+
+1. Objective
+
+Develop a working AI Test Maintenance Agent that can understand an existing Robot Framework repository, execute tests, analyze failures, automatically repair affected automation scripts, and rerun tests to verify the fixes.
+
+The agent must expose reusable, individually invokable skills and support orchestrating those skills into a complete end-to-end maintenance workflow.
+
+This POC must demonstrate that AI can reduce manual automation maintenance effort in a realistic project, including complex scenarios involving shared keywords, resource files, dynamic locators, nested failures, asynchronous UI behavior, and multiple tests affected by the same underlying issue.
+
+Important: Keep the platform architecture aligned with the POC scope, but do not simplify the agent's reasoning, code analysis, repair capabilities, or validation quality. The goal is a focused implementation with robust engineering.
+
+2. First action: Inspect the existing workspace
+
+Before writing code, inspect the current workspace and identify the example repository available for implementation and testing.
+
+- Read the repository's existing instructions and documentation.
+- Identify the Robot Framework version, dependencies, execution commands, test suites, resource files, libraries, configuration, and locator patterns.
+- Determine whether the project uses SeleniumLibrary, Browser Library, Playwright, or another browser automation mechanism.
+- Identify the available LLM client and how individual users' credentials can be configured.
+- Determine how to execute the tests and access "output.xml", logs, screenshots, browser state, and DOM evidence.
+- Identify an existing failure scenario suitable for demonstrating automated maintenance.
+
+Reuse the repository's existing framework and conventions wherever possible. Do not assume a framework, invent a repository structure, or replace working project components without justification.
+
+After inspecting the workspace, implement the solution and test it. Do not stop after producing an architecture, plan, pseudocode, or TODO list.
+
+3. Core architecture
+
+Implement five independently invokable skills and a lightweight orchestration mechanism.
+
+Skill 1: Project Understanding
+
+Build a reliable understanding of the existing automation repository.
+
+Capabilities:
+
+- Analyze nested test suites and directory structures.
+- Identify ".robot" files, resource files, keywords, Python libraries, variables, configuration, setup/teardown, templates, and locator definitions.
+- Trace multi-level keyword calls and dependencies between test cases, keywords, locators, and shared resources.
+- Handle variables and locators defined across multiple files or constructed dynamically.
+- Identify shared assets whose modification could affect multiple tests.
+- Retrieve relevant source code and project context on demand.
+- Refresh project information when files change.
+
+Output: A structured project representation containing relevant files, keywords, locators, dependencies, and execution details.
+
+Use repository analysis and lightweight local or in-memory data structures. Do not introduce a separate database or persistent knowledge service.
+
+Skill 2: Test Execution
+
+Execute Robot Framework tests using the repository's actual execution conventions.
+
+Capabilities:
+
+- Run an individual test, test suite, directory, or configured test scope.
+- Support execution through the existing local or CI execution mechanism, including Jenkins when required by the repository.
+- Generate and collect "output.xml", "log.html", "report.html", execution logs, and screenshots where available.
+- Capture the execution command, exit status, artifact locations, and test results.
+- Accept a previously generated "output.xml" for analysis without unnecessarily rerunning the original test.
+- Distinguish test failures from execution errors such as missing dependencies, invalid configuration, and unavailable environments.
+
+Output: Execution summary, artifact locations, and structured test results.
+
+Skill 3: Failure Analysis
+
+Analyze real execution evidence to identify why tests failed.
+
+Capabilities:
+
+- Parse Robot Framework "output.xml" structurally, including nested keywords, error messages, and failure locations.
+- Trace failures from test cases through nested keywords and resource files to the relevant implementation.
+- Inspect logs, screenshots, DOM snapshots, browser evidence, and current application state when available.
+- Identify failure categories, including stale locators, changed UI elements, timing and synchronization issues, assertion failures, data problems, environment failures, and application defects.
+- Group related failures that share a likely root cause.
+- Identify the smallest relevant set of files requiring investigation.
+- Provide evidence, confidence, and a recommended action for each diagnosis.
+
+Do not assume every failure is a locator problem. Do not invent root causes or replacement selectors without sufficient evidence.
+
+Output: Structured failure analysis containing failed tests, relevant keywords, root-cause hypotheses, evidence, affected files, and repair recommendations.
+
+Skill 4: Test Maintenance and Repair
+
+Repair identified automation maintenance issues by making actual, controlled code changes.
+
+Capabilities:
+
+- Locate the relevant test, keyword, resource, page-object, library, or locator definition.
+- Inspect current UI evidence before proposing locator replacements.
+- Handle changed IDs, CSS selectors, accessible names, labels, nested DOM structures, repeated elements, dynamic attributes, iframes, shadow DOM, dialogs, and asynchronous rendering where supported by the existing framework.
+- Trace shared locators and keywords to determine the full impact of a change.
+- Prefer reliable, contextually correct locators over fragile positional selectors.
+- Repair synchronization issues only when evidence supports the diagnosis.
+- Modify the smallest appropriate set of files.
+- Preserve assertions, expected business behavior, test data expectations, and the original test intent.
+- Generate a readable diff and explain why each change was made.
+- Keep changes isolated in a safe working copy or dedicated branch.
+
+The skill must not delete assertions, weaken expected results, skip failed steps, suppress errors, or make tests pass by changing their business meaning.
+
+If the issue is an application defect, ambiguous element mapping, or an unsupported failure type, do not fabricate a repair. Return a diagnosis and explain what requires investigation.
+
+Output: Actual code modifications, a reviewable diff, the rationale, and the affected-test list.
+
+Skill 5: Validation
+
+Verify that repairs work and have not introduced regressions.
+
+Capabilities:
+
+- Rerun the repaired test or tests.
+- Parse the new "output.xml" and inspect the actual results.
+- Compare original and final execution results.
+- Check that original assertions and business validations remain intact.
+- Execute relevant regression tests when shared keywords, locators, or resources change.
+- Detect regressions and distinguish them from the original failure.
+- Feed new evidence back to failure analysis when another repair attempt is justified.
+- Support a configurable, bounded repair-and-retry loop; use two repair attempts per failure as the initial default.
+- Stop safely when a repair cannot be validated.
+
+Output: Verified repairs, before-and-after results, regressions, unresolved failures, and manual actions required.
+
+A repair is successful only when the relevant tests pass for the expected reason. An unavailable environment or insufficient evidence must never be reported as a successful validation.
+
+4. Skill invocation and orchestration
+
+Each skill must be independently invokable through the coding agent's available skill or tool mechanism. Use the host's existing skill conventions where available; do not invent a new external skill platform.
+
+Support commands such as:
+
+- "Understand this Robot Framework repository."
+- "Execute the Customer Search test."
+- "Analyze this output.xml and identify the root causes."
+- "Repair the identified locator failures."
+- "Validate the modified tests and report regressions."
+
+Also support a single end-to-end instruction:
+
+"Execute the requested Robot Framework test suite, inspect output.xml and supporting evidence, diagnose failures, automatically repair the issues that can be safely fixed, rerun affected tests, perform relevant regression validation, and report the final results."
+
+The orchestration flow must be:
+
+1. Understand the repository when needed.
+2. Execute the requested tests or accept an existing "output.xml".
+3. Analyze failures and correlate related issues.
+4. Trace each repairable failure to its source.
+5. Modify the relevant automation assets.
+6. Rerun affected tests.
+7. Perform regression checks when shared assets change.
+8. Retry only within the configured limit.
+9. Report verified repairs and unresolved issues.
+
+Skills must exchange structured outputs rather than depending entirely on free-form LLM messages. Preserve the evidence and source references passed between skills.
+
+5. Complex scenarios the POC must handle
+
+Do not validate the implementation only against a single, straightforward locator replacement.
+
+Use the example repository to test realistic scenarios, introducing controlled fixtures where necessary.
+
+Scenario A — Shared locator failure
+
+A UI element changes and multiple tests fail because they share a locator. The agent identifies the common dependency, fixes the correct shared asset, and validates the affected tests.
+
+Scenario B — Nested keyword failure
+
+A test fails inside a multi-level keyword call. The agent traces the failure to the actual implementation instead of modifying the top-level test unnecessarily.
+
+Scenario C — Dynamic or ambiguous elements
+
+Several elements have similar attributes or dynamic identifiers. The agent uses current UI evidence and element context to identify the correct target or abstains when it cannot do so reliably.
+
+Scenario D — Asynchronous UI behavior
+
+A test fails because an element is rendered asynchronously, covered by an overlay, or not ready for interaction. The agent investigates available timing and browser evidence instead of blindly adding sleeps.
+
+Scenario E — Genuine application defect
+
+A business assertion fails because the application returns an incorrect value. The agent identifies the likely application defect and preserves the assertion.
+
+Scenario F — Correlated failures
+
+Multiple tests fail for one underlying reason. The agent groups failures, applies a targeted repair, and validates the impacted tests.
+
+Scenario G — Regression caused by a repair
+
+A proposed fix resolves one test but breaks another. The agent detects the regression and does not report the repair as successful.
+
+Scenario H — Insufficient evidence
+
+The agent cannot establish a reliable cause. It reports what is missing and avoids unsupported changes.
+
+Scenario I — Multiple failure categories in one execution
+
+A suite contains a mixture of locator failures, timing issues, environment failures, and assertion failures. The agent classifies them separately and does not apply the same repair strategy to every failure.
+
+For each scenario, record the initial failure, diagnosis, changes made, rerun results, and final disposition. Clearly document scenarios that cannot be demonstrated because of repository or environment limitations.
+
+6. Example repository validation
+
+The implementation must be tested against the actual example repository identified during workspace inspection.
+
+Requirements:
+
+- Execute real Robot Framework tests.
+- Use actual "output.xml" artifacts and relevant execution evidence.
+- Demonstrate at least one complete automated repair from failure through successful rerun.
+- Demonstrate at least one failure that must not be automatically repaired.
+- Validate shared-asset changes against affected tests.
+- Preserve original files and capture before-and-after diffs.
+- Include reproducible commands and test fixtures for any scenarios not directly supported by the example repository.
+
+If the repository is not runnable, investigate the actual blocker. Use a controlled fixture to validate supported behavior where practical, and clearly distinguish simulated evidence from real application execution. Never claim a test passed unless it actually ran and passed.
+
+7. Scale and maintenance-effort evaluation
+
+The target is to evaluate the approach against approximately 100 automation scripts, where the repository and execution environment permit.
+
+Measure:
+
+- Scripts and tests analyzed.
+- Failures detected and classified.
+- Root causes correctly identified.
+- Repairs attempted and successfully validated.
+- Regression failures detected.
+- Cases appropriately escalated for investigation.
+- Manual interventions required.
+- Baseline manual maintenance time versus AI-assisted maintenance time.
+
+Treat maintenance-effort reduction as a measured outcome, not a guaranteed percentage. Explain how the baseline and AI-assisted times were measured.
+
+8. Credentials and operational safety
+
+- Use the individual user's configured LLM credentials and token allocation.
+- Do not require a shared LLM gateway.
+- Never hardcode or print API keys, access tokens, or passwords.
+- Use the existing repository and execution environment.
+- Restrict execution and file modifications to the intended workspace.
+- Preserve original source files and maintain a clear audit trail of changes.
+- Do not merge changes automatically into the main branch.
+- Keep retries bounded and stop on unsafe or ambiguous repairs.
+- Do not introduce a database, dashboard, hosted service, or separate API solely for this POC.
+
+9. Out of scope
+
+Unless the existing repository already provides these capabilities and they are needed for validation, do not implement:
+
+- A new dashboard or web application.
+- A separate database or persistent knowledge platform.
+- A new hosted backend or microservices architecture.
+- A centralized LLM gateway.
+- Mandatory automatic pull-request creation.
+- An elaborate multi-agent platform unrelated to the required workflow.
+
+The exclusion of these platform components must not limit the complexity of test analysis, repair reasoning, or validation.
+
+10. Acceptance criteria
+
+The POC is accepted when:
+
+1. Five independently invokable skills are implemented and usable.
+2. The complete maintenance workflow can be initiated with a single instruction.
+3. The agent understands the existing Robot Framework repository and traces nested keyword and locator dependencies.
+4. The execution skill runs real tests and produces usable results.
+5. The analysis skill correctly parses "output.xml" and identifies relevant failure evidence.
+6. The repair skill makes actual, controlled modifications to supported failures.
+7. The validation skill reruns tests and verifies the outcome.
+8. Shared-asset changes trigger appropriate regression checks.
+9. Business assertions and test intent are preserved.
+10. Unrepairable and ambiguous failures are correctly escalated.
+11. The implementation is demonstrated against the example repository with actual execution evidence.
+12. Results, diffs, commands, limitations, and maintenance-effort measurements are documented.
+13. The implementation remains aligned with the existing repository and does not introduce unnecessary infrastructure.
+
+11. Implementation instructions
+
+Work directly in the existing workspace.
+
+First inspect the repository, then implement the five skills and orchestration using the existing framework and conventions. Execute the tests, diagnose real failures, apply repairs, and verify the results. Fix implementation issues discovered during testing.
+
+Do not stop after writing the design or generating a code scaffold. Do not replace actual execution with mocked outputs or claim unverified success.
+
+At completion, provide:
+
+- The files created or modified.
+- The purpose and invocation instructions for each skill.
+- Setup and execution commands.
+- Actual test results and artifact locations.
+- Before-and-after code diffs.
+- Complex scenarios demonstrated and their outcomes.
+- Known limitations and blockers.
+- Measured maintenance-effort results, where sufficient evidence is available.
+
+Final goal: Deliver a credible, skill-based AI Test Maintenance Agent POC that can understand a real Robot Framework repository, execute tests, diagnose complex failures, repair supported automation issues, and verify the resulting changes with evidence—while keeping the platform architecture aligned with the manager's requested scope.
